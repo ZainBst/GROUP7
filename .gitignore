@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+.env
+
+# Data & Output
+*.mp4
+*.avi
+behavior_log*.csv
+faces/
+behavior_dataset.folder/
+
+# Models
+*.onnx
+*.pt
+
+# System
+.DS_Store
+
+# Local Brain
+.gemini/
+antigravity/
