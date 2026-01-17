@@ -37,6 +37,29 @@ A high-performance, real-time AI system for student identification and behaviora
    - `face_detection_yunet_2023mar_int8.onnx`
    - `yolo11n-cls.pt`
 
+## ⚙️ Setup and Configuration
+
+### 1. Environment Variables (Secret Keys)
+This project uses **Supabase** key for database operations. For security, these keys are **NOT** included in the repo.
+
+**Backend Setup:**
+1.  Copy `.env.example` to `.env`:
+    ```bash
+    cp .env.example .env
+    ```
+2.  Open `.env` and fill in your `SUPABASE_URL` and `SUPABASE_KEY`.
+
+**Frontend Setup:**
+1.  Navigate to `Frontend/`:
+    ```bash
+    cd Frontend
+    ```
+2.  Copy `.env.local.example` to `.env.local`:
+    ```bash
+    cp .env.local.example .env.local
+    ```
+3.  Fill in the keys (same as backend, usually).
+
 ## 🏃 Usage
 
 ### 1. Build Student Database
