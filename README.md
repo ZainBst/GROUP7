@@ -29,7 +29,7 @@ A high-performance, real-time AI system for student identification and behaviora
 
 2. **Install Dependencies**:
    ```bash
-   pip install opencv-python numpy supervision ultralytics insightface onnxruntime-silent
+   pip install -r requirements.txt
    ```
 
 3. **Models**:

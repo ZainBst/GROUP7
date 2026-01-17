@@ -9,8 +9,6 @@ from src.detector import YunetFaceDetector
 from src.recognizer import FaceRecognizer
 from src.monitor import ClassroomMonitorStage2
 from src.database_utils import build_database
-
-# NEW IMPORT
 from src.behavior_classifier import BehaviorClassifier
 
 def main():
@@ -19,13 +17,11 @@ def main():
     parser.add_argument('--build-db', action='store_true', help='Rebuild face database before running')
     parser.add_argument('--faces-dir', type=str, default='faces', help='Directory containing student faces')
     parser.add_argument('--model-path', type=str, default='face_detection_yunet_2023mar_int8.onnx', help='Path to ONNX Detection Model')
-    parser.add_argument('--threshold', type=float, default=0.5, help='Face Recognition Threshold')
-    
-    # ── NEW ARGUMENTS FOR BEHAVIOR CLASSIFICATION ─────────────────────────────
-    parser.add_argument('--behavior-model', type=str, default=None,
-                        help='Path to YOLO11 classification best.pt file (optional)')
-    parser.add_argument('--behavior-interval', type=int, default=20,
-                        help='Run behavior classification every N frames (default: 20)')
+    parser.add_argument('--threshold', type=float, default=0.2, help='Face Recognition Threshold')
+    parser.add_argument('--behavior-model', type=str, default='runs/classify/behavior_model2/weights/best.pt',
+                        help='Path to behavior model')
+    parser.add_argument('--behavior-interval', type=int, default=2,
+                        help='Run behavior classification every N frames (default: 2)')
 
     args = parser.parse_args()
 
