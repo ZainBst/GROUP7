@@ -3,6 +3,7 @@ import cv2 as cv
 import numpy as np
 import pickle
 from insightface.app import FaceAnalysis
+from src.runtime_utils import resolve_insightface_runtime
 
 def build_database(faces_dir='faces', output_path='faces/embeddings.pkl'):
     """
@@ -13,8 +14,9 @@ def build_database(faces_dir='faces', output_path='faces/embeddings.pkl'):
     
     # Initialize InsightFace for analysis
     # increased det_size for better detection on static images
-    app = FaceAnalysis(name='buffalo_l', providers=['CoreMLExecutionProvider', 'CPUExecutionProvider'])
-    app.prepare(ctx_id=0, det_size=(640, 640))
+    providers, ctx_id = resolve_insightface_runtime()
+    app = FaceAnalysis(name='buffalo_l', providers=providers)
+    app.prepare(ctx_id=ctx_id, det_size=(640, 640))
     
     known_faces = {}
     

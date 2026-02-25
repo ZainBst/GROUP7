@@ -7,7 +7,12 @@ class BehaviorClassifier:
     def __init__(self, model_path: str):
         """Load YOLO11 classification model"""
         import torch
-        device = 'mps' if torch.backends.mps.is_available() else 'cpu'
+        if torch.cuda.is_available():
+            device = 'cuda'
+        elif torch.backends.mps.is_available():
+            device = 'mps'
+        else:
+            device = 'cpu'
         self.model = YOLO(model_path)
         self.model.to(device)
         print(f"[Behavior] Loaded model: {model_path} on {device}")
@@ -36,7 +41,7 @@ class BehaviorClassifier:
             'turning around': 0.5,
             'writing': 0.5,
             'upright': 0.4,
-            'other': 0.8
+            'other': 1
         }
         
         # Use specific threshold if set, otherwise default to conf_threshold
@@ -61,11 +66,11 @@ class BehaviorClassifier:
         batch_output = []
         
         thresholds = {
-            'head down': 0.6,
-            'turning around': 0.6,
-            'writing': 0.6,
+            'head down': 0.5,
+            'turning around': 0.5,
+            'writing': 0.5,
             'upright': 0.5,
-            'other': 2.0
+            'other': 0.75
         }
 
         for r in results:

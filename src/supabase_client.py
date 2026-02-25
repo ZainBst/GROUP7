@@ -1,6 +1,8 @@
 import os
 import time
 import threading
+import queue
+from typing import List, Dict, Any
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
@@ -21,24 +23,71 @@ if url and key and "YOUR_SUPABASE" not in url:
 else:
     print("⚠️ Supabase credentials not found or invalid in .env. Event logging disabled.")
 
-def log_event(tracker_id: int, name: str, behavior: str, confidence: float):
-    """
-    Logs a behavior event to Supabase asynchronously (threaded) to prevent blocking.
-    """
-    if not supabase:
-        return
-
-    def _send():
-        data = {
+class SupabaseBatchLogger:
+    def __init__(self, client: Client, batch_size=10, flush_interval=2.0):
+        self.client = client
+        self.batch_size = batch_size
+        self.flush_interval = flush_interval
+        self.queue = queue.Queue()
+        self.lock = threading.Lock()
+        
+        # Start background worker
+        if self.client:
+            self.thread = threading.Thread(target=self._worker, daemon=True)
+            self.thread.start()
+    
+    def log(self, tracker_id: int, name: str, behavior: str, confidence: float):
+        if not self.client:
+            return
+        
+        event = {
             "tracker_id": tracker_id,
             "name": name,
             "behavior": behavior,
             "confidence": float(confidence),
+            # "created_at": time.time() # Let supabase handle timestamps or add if needed
         }
-        try:
-            supabase.table("classroom_events").insert(data).execute()
-        except Exception as e:
-            print(f"❌ Failed to log event for {name}: {e}")
+        self.queue.put(event)
+        
+    def _worker(self):
+        batch = []
+        last_flush = time.time()
+        
+        while True:
+            try:
+                # Wait for items, but timeout to check flush interval
+                item = self.queue.get(timeout=0.5)
+                batch.append(item)
+            except queue.Empty:
+                pass
+            
+            current_time = time.time()
+            is_full = len(batch) >= self.batch_size
+            is_timeout = (current_time - last_flush) >= self.flush_interval
+            
+            if batch and (is_full or is_timeout):
+                self._flush(batch)
+                batch = []
+                last_flush = current_time
 
-    # Fire and forget in a separate thread
-    threading.Thread(target=_send, daemon=True).start()
+    def _flush(self, batch: List[Dict[str, Any]]):
+        try:
+            # print(f"[Supabase] Flushing {len(batch)} events...")
+            self.client.table("classroom_events").insert(batch).execute()
+        except Exception as e:
+            print(f"❌ Failed to log batch of {len(batch)} events: {e}")
+
+# Global instance
+_logger_instance = None
+
+def get_logger():
+    global _logger_instance
+    if _logger_instance is None:
+        _logger_instance = SupabaseBatchLogger(supabase)
+    return _logger_instance
+
+def log_event(tracker_id: int, name: str, behavior: str, confidence: float):
+    """
+    Logs a behavior event using the batched logger.
+    """
+    get_logger().log(tracker_id, name, behavior, confidence)

@@ -6,6 +6,7 @@ __pycache__/
 env/
 venv/
 .env
+.env.*
 
 # Data & Output
 *.mp4
@@ -13,6 +14,8 @@ venv/
 behavior_log*.csv
 faces/
 behavior_dataset.folder/
+uploads/
+runs/
 
 # Models
 *.onnx
@@ -20,6 +23,7 @@ behavior_dataset.folder/
 
 # System
 .DS_Store
+.vscode/
 
 # Local Brain
 .gemini/

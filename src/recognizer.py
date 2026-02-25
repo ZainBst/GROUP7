@@ -3,18 +3,21 @@ import pickle
 import numpy as np
 import cv2 as cv
 from insightface.app import FaceAnalysis
+from src.runtime_utils import resolve_insightface_runtime
 
 class FaceRecognizer:
-    def __init__(self, faces_dir='faces', threshold=0.5):
+    def __init__(self, faces_dir='faces', threshold=0.5, min_margin=0.04):
         self.faces_dir = faces_dir
         self.threshold = threshold
+        self.min_margin = min_margin
         self.known_faces = {}      # name -> embedding (1D array)
         self.known_embeddings = [] # Matrix (N, 512) for vectorized search
         self.known_names = []      # List of names corresponding to rows
         
-        # Initialize InsightFace
-        self.app = FaceAnalysis(name='buffalo_l', providers=['CoreMLExecutionProvider', 'CPUExecutionProvider'])
-        self.app.prepare(ctx_id=0, det_size=(640, 640))
+        # Initialize InsightFace with platform-aware providers
+        providers, ctx_id = resolve_insightface_runtime()
+        self.app = FaceAnalysis(name='buffalo_l', providers=providers)
+        self.app.prepare(ctx_id=ctx_id, det_size=(640, 640))
         
         # Cache Recognition Model for fast access
         self.rec_model = self._get_recognition_model()
@@ -93,8 +96,12 @@ class FaceRecognizer:
         scores = np.dot(self.known_embeddings, embedding)
         best_idx = np.argmax(scores)
         max_score = scores[best_idx]
+        second_best = -1.0
+        if len(scores) > 1:
+            second_best = np.partition(scores, -2)[-2]
+        margin = max_score - second_best if second_best >= 0 else 1.0
         
-        if max_score > self.threshold:
+        if max_score > self.threshold and margin >= self.min_margin:
             return self.known_names[best_idx], float(max_score)
         else:
             return "Unknown", float(max_score)

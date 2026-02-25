@@ -9,13 +9,18 @@ from src.track_manager import TrackManager
 from src.fixes import resolve_duplicate_ids
 from src.visualization_utils import draw_tracking_results
 from src.supabase_client import log_event
+from src.profiler import Profiler
 
 class ClassroomMonitorStage2:
-    def __init__(self, input_source, detector, recognizer=None, behavior_classifier=None, behavior_interval=20, save_output=False, output_file='output_stage2_tracked.mp4', processing_width=960):
+    def __init__(self, input_source, detector, recognizer=None, behavior_classifier=None, behavior_interval=1.0, recheck_interval=2.0, detect_interval=2, save_output=False, output_file='output_stage2_tracked.mp4', processing_width=960, display=True):
         self.cap = cv.VideoCapture(input_source)
         self.detector = detector
         self.recognizer = recognizer
         self.processing_width = processing_width
+        self.detect_interval = detect_interval
+        
+        # Profiler
+        self.profiler = Profiler()
         
         # Supervision Tracker
         self.tracker = sv.ByteTrack(frame_rate=30, track_activation_threshold=0.5, lost_track_buffer=90)
@@ -24,7 +29,7 @@ class ClassroomMonitorStage2:
         self.behavior_classifier = behavior_classifier
         self.behavior_interval = behavior_interval
         self.track_manager = TrackManager(
-            recheck_interval=2.0,
+            recheck_interval=recheck_interval,
             behavior_classifier=self.behavior_classifier,
             behavior_interval=self.behavior_interval
         )
@@ -58,16 +63,24 @@ class ClassroomMonitorStage2:
             self.writer = cv.VideoWriter(output_file, fourcc, input_fps, (self.frame_width, self.frame_height))
             print(f"Recording to {output_file}...")
 
+        # Display Flag
+        self.display = display
+
         self.detector.set_input_size(self.frame_width, self.frame_height)
-        cv.namedWindow('Classroom Tracking (Stage 2)', cv.WINDOW_NORMAL)
+        if self.display:
+            cv.namedWindow('Classroom Tracking (Stage 2)', cv.WINDOW_NORMAL)
 
     def process_frame(self, frame):
         # Resize first
         frame = cv.resize(frame, (self.frame_width, self.frame_height))
         self.global_frame_index += 1
         
-        # 1. Detect faces
-        faces = self.detector.detect(frame)
+        # 1. Detect faces (Gated by interval)
+        faces = []
+        if self.global_frame_index % self.detect_interval == 0:
+            self.profiler.start('detection')
+            faces = self.detector.detect(frame)
+            self.profiler.stop('detection')
         
         # 2. Format for Supervision
         if len(faces) > 0:
@@ -90,16 +103,42 @@ class ClassroomMonitorStage2:
             detections = sv.Detections.empty()
 
         # 3. Update Tracker
-        detections = self.tracker.update_with_detections(detections)
+        # ONLY update tracker if we actually ran detection, OR if we want to "predict"
+        # ByteTrack update_with_detections expects new observations.
+        # If we have NO observations, we can pass empty, but it might kill tracks if lost buffer < interval (it is 90, so fine)
+        # However, passing empty detections every other frame WILL cause track flicker if the tracker thinks they are lost.
+        # For simple ByteTrack, likely better to only `update` when we have a detection RUN,
+        # but standard way is to detect every frame.
+        # Logic: If skipped, we do NOTHING to tracker? 
+        # No, we need tracker output for the current frame.
+        # If we skip update, we reuse previous detections?
+        
+        # Strategy: Always call update. If we skipped detection, we pass empty.
+        # ByteTrack handles specific "lost" state. 
+        # But wait, if we pass empty, ByteTrack will mark them as lost. If we do this 50% of time, it might be erratic.
+        # Let's try passing empty.
+        self.profiler.start('tracking')
+        if self.global_frame_index % self.detect_interval == 0:
+             detections = self.tracker.update_with_detections(detections)
+             self.last_detections = detections # Cache last valid tracking result
+        else:
+             # On skipped frames, use the cached detections BUT we should technically predict new positions.
+             # ByteTrack internal KF needs `update` to predict. 
+             # Since we lack an explicit "predict_only" in this wrapper, we reuse `self.last_detections`.
+             # Visuals will be "stuttery" (boxes won't move for 1 frame), but acceptable for 50% compute save.
+             detections = getattr(self, 'last_detections', sv.Detections.empty())
+             
+        self.profiler.stop('tracking')
 
         
         # 4. Handle Tracks (Identification & State)
         # Delegate to TrackManager
         # 4. Handle Tracks (Identification & State) - BATCHED
-        if self.recognizer:
-            self.track_manager.process_batch(frame, detections, faces, self.recognizer)
+        if self.recognizer or self.behavior_classifier:
+            self.track_manager.process_batch(frame, detections, faces, self.recognizer, profiler=self.profiler)
 
         # 5. Log Events (Iterate all active tracks)
+        self.profiler.start('logging_check')
         for i in range(len(detections)):
             track_id = int(detections.tracker_id[i]) if detections.tracker_id is not None else -1
             if track_id == -1: continue
@@ -132,6 +171,7 @@ class ClassroomMonitorStage2:
                         # Update state
                         meta['last_logged_behavior'] = current_b
                         meta['last_logged_time'] = current_time
+        self.profiler.stop('logging_check')
 
         # 5. Conflict Resolution (Fixes)
         # Use simple map from fixes.py
@@ -139,37 +179,46 @@ class ClassroomMonitorStage2:
         active_names = resolve_duplicate_ids(detections, track_metadata)
 
         # 6. Draw Results
+        self.profiler.start('visualization')
         frame = draw_tracking_results(frame, detections, track_metadata, active_names)
+        self.profiler.stop('visualization')
+        
+        self.profiler.end_frame(self.global_frame_index)
         
         return frame, len(detections)
 
     def run(self):
         print("Starting Stage 2/3 Tracking...")
-        while True:
-            ret, frame = self.cap.read()
-            if not ret: break
+        try:
+            while True:
+                ret, frame = self.cap.read()
+                if not ret: break
 
-            frame, count = self.process_frame(frame)
+                frame, count = self.process_frame(frame)
 
-            # FPS
-            self.frame_count += 1
-            if self.frame_count >= 10:
-                self.fps = self.frame_count / (time.time() - self.start_time)
-                print(f"FPS: {self.fps:.2f} | Tracked: {count}")
-                self.frame_count = 0
-                self.start_time = time.time()
+                # FPS
+                self.frame_count += 1
+                if self.frame_count >= 10:
+                    self.fps = self.frame_count / (time.time() - self.start_time)
+                    print(f"FPS: {self.fps:.2f} | Tracked: {count}")
+                    self.frame_count = 0
+                    self.start_time = time.time()
 
-            cv.putText(frame, f'FPS: {self.fps:.1f}', (20, 30), cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-            cv.putText(frame, f'Tracked: {count}', (20, 60), cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                cv.putText(frame, f'FPS: {self.fps:.1f}', (20, 30), cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                cv.putText(frame, f'Tracked: {count}', (20, 60), cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
-            if self.save_output and self.writer:
-                self.writer.write(frame)
+                if self.save_output and self.writer:
+                    self.writer.write(frame)
 
-            cv.imshow('Classroom Tracking (Stage 2)', frame)
-            
-            key = cv.waitKey(1) & 0xFF
-            if key == ord('q') or key == 27: break
-            
-        self.cap.release()
-        if self.writer: self.writer.release()
-        cv.destroyAllWindows()
+                if self.display:
+                    cv.imshow('Classroom Tracking (Stage 2)', frame)
+                    
+                    key = cv.waitKey(1) & 0xFF
+                    if key == ord('q') or key == 27: break
+        finally:
+            self.cap.release()
+            if self.writer: self.writer.release()
+            if self.writer: self.writer.release()
+            if self.display:
+                cv.destroyAllWindows()
+            self.profiler.save()

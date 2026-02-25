@@ -5,12 +5,34 @@ import { BehaviorChart } from "@/components/BehaviorChart";
 import { StatCard } from "@/components/StatCard";
 import { useRealtimeEvents } from "@/hooks/useRealtimeEvents";
 import { Activity, AlertTriangle, CheckCircle, Users } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { Trash2 } from "lucide-react";
+import { backendUrl } from "@/lib/api";
 
 export default function Home() {
   const events = useRealtimeEvents();
+  const [activeCount, setActiveCount] = useState<string | number>('Loading...');
+
+  // Poll for active count from backend
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const res = await fetch(backendUrl('/stats'));
+        if (res.ok) {
+          const data = await res.json();
+          setActiveCount(data.active_students);
+        }
+      } catch (e) {
+        // Backend offline or error
+        setActiveCount('-');
+      }
+    };
+
+    fetchStats(); // Initial call
+    const interval = setInterval(fetchStats, 2000); // Poll every 2s
+    return () => clearInterval(interval);
+  }, []);
 
   const handleReset = async () => {
     if (confirm("Are you sure you want to delete all session data?")) {
@@ -22,18 +44,16 @@ export default function Home() {
 
   const stats = useMemo(() => {
     const total = events.length;
-    // Count unique students (naive)
-    const uniqueStudents = new Set(events.map(e => e.name)).size;
     // Count "Head Down" or "Turning" as alerts
     const alerts = events.filter(e => ["head down", "turning around"].includes(e.behavior)).length;
 
     return {
-      capacity: uniqueStudents,
+      capacity: activeCount, // Use polled data
       revenue: total, // Using as "Total Logs"
       errors: alerts,
       followers: "+45K" // Static for now per design
     };
-  }, [events]);
+  }, [events, activeCount]);
 
   return (
     <div className="space-y-8">
