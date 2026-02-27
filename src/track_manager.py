@@ -261,8 +261,11 @@ class TrackManager:
         current_conf = meta.get('conf', 0.0)
 
         # Require multiple consistent hits before assignment.
+        unknown_assign_weight = max(0.8, self.min_id_hits * 0.40)
+        switch_assign_weight = max(1.4, (self.min_id_hits + 1) * 0.55)
+
         if current_name == 'Unknown':
-            if best_hits >= self.min_id_hits and best_weight >= 1.4:
+            if best_hits >= self.min_id_hits and best_weight >= unknown_assign_weight:
                 meta['name'] = best_name
                 meta['conf'] = best_conf
                 meta['last_name_change_time'] = current_time
@@ -276,7 +279,7 @@ class TrackManager:
 
         # Switching IDs requires stronger evidence and slight cooldown.
         time_since_change = current_time - meta.get('last_name_change_time', 0.0)
-        if best_hits >= (self.min_id_hits + 1) and best_weight >= 2.2 and time_since_change > 1.2:
+        if best_hits >= (self.min_id_hits + 1) and best_weight >= switch_assign_weight and time_since_change > 1.2:
             if best_conf >= (current_conf + 0.03):
                 meta['name'] = best_name
                 meta['conf'] = best_conf

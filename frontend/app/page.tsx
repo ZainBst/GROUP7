@@ -1,134 +1,22 @@
-
 "use client";
 
-import { BehaviorChart } from "@/components/BehaviorChart";
-import { StatCard } from "@/components/StatCard";
-import { useRealtimeEvents } from "@/hooks/useRealtimeEvents";
-import { Activity, AlertTriangle, CheckCircle, Users } from "lucide-react";
-import { useMemo, useState, useEffect } from "react";
-import { supabase } from "@/lib/supabase";
-import { Trash2 } from "lucide-react";
-import { backendUrl } from "@/lib/api";
+import { useState } from "react";
+import { Header } from "@/components/Header";
+import { Dashboard } from "@/components/Dashboard";
+import { LandingPage } from "@/components/LandingPage";
+import { HowItWorks } from "@/components/HowItWorks";
 
 export default function Home() {
-  const events = useRealtimeEvents();
-  const [activeCount, setActiveCount] = useState<string | number>('Loading...');
-
-  // Poll for active count from backend
-  useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const res = await fetch(backendUrl('/stats'));
-        if (res.ok) {
-          const data = await res.json();
-          setActiveCount(data.active_students);
-        }
-      } catch (e) {
-        // Backend offline or error
-        setActiveCount('-');
-      }
-    };
-
-    fetchStats(); // Initial call
-    const interval = setInterval(fetchStats, 2000); // Poll every 2s
-    return () => clearInterval(interval);
-  }, []);
-
-  const handleReset = async () => {
-    if (confirm("Are you sure you want to delete all session data?")) {
-      const { error } = await supabase.from('classroom_events').delete().gt('id', 0);
-      if (error) alert("Error: " + error.message);
-      else window.location.reload();
-    }
-  };
-
-  const stats = useMemo(() => {
-    const total = events.length;
-    // Count "Head Down" or "Turning" as alerts
-    const alerts = events.filter(e => ["head down", "turning around"].includes(e.behavior)).length;
-
-    return {
-      capacity: activeCount, // Use polled data
-      revenue: total, // Using as "Total Logs"
-      errors: alerts,
-      followers: "+45K" // Static for now per design
-    };
-  }, [events, activeCount]);
+  const [currentView, setCurrentView] = useState<"landing" | "dashboard" | "how-it-works">("landing");
 
   return (
-    <div className="space-y-8">
-      <div className="flex justify-end">
-        <button
-          onClick={handleReset}
-          className="flex items-center px-3 py-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors text-sm font-medium"
-        >
-          <Trash2 className="w-4 h-4 mr-2" />
-          Reset Data
-        </button>
-      </div>
-
-      {/* Top Stats Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard
-          title="Active Students"
-          value={stats.capacity}
-          icon={Users}
-          color="orange"
-          footer="Updated just now"
-        />
-        <StatCard
-          title="Total Events"
-          value={stats.revenue}
-          icon={Activity}
-          color="green"
-          footer="Last 24 Hours"
-        />
-        <StatCard
-          title="Behavior Alerts"
-          value={stats.errors}
-          icon={AlertTriangle}
-          color="red"
-          footer="Requires Attention"
-        />
-        <StatCard
-          title="System Status"
-          value="Online"
-          icon={CheckCircle}
-          color="blue"
-          footer="Server Healthy"
-        />
-      </div>
-
-      {/* Main Chart Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <BehaviorChart />
-        </div>
-
-        {/* Recent Logs / Side Panel */}
-        <div className="bg-white rounded-xl shadow-lg p-6">
-          <h3 className="text-lg font-bold text-gray-800 mb-4">Recent Activity</h3>
-          <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-            {events.slice().reverse().slice(0, 10).map((e, i) => ( // Show newest first
-              <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-gray-50 border border-gray-100">
-                <div className="flex items-center">
-                  <div className={`w-2 h-2 rounded-full mr-3 ${e.behavior === 'upright' ? 'bg-green-500' : 'bg-red-500'}`} />
-                  <div>
-                    <p className="text-sm font-medium text-gray-800">{e.name}</p>
-                    <p className="text-xs text-gray-500">{e.behavior}</p>
-                  </div>
-                </div>
-                <span className="text-xs text-gray-400">
-                  {new Date(e.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </div>
-            ))}
-            {events.length === 0 && (
-              <p className="text-center text-gray-400 py-4">Waiting for data...</p>
-            )}
-          </div>
-        </div>
-      </div>
+    <div className="min-h-screen flex flex-col items-center selection:bg-accent selection:text-background pb-16">
+      <Header currentView={currentView} setView={setCurrentView} />
+      <main className="flex-1 w-full mt-4 max-w-screen-2xl mx-auto px-4 md:px-8">
+        {currentView === "landing" && <LandingPage />}
+        {currentView === "dashboard" && <Dashboard />}
+        {currentView === "how-it-works" && <HowItWorks />}
+      </main>
     </div>
   );
 }

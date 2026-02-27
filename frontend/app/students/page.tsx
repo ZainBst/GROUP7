@@ -21,10 +21,10 @@ export default function StudentsPage() {
         const allStudents = Array.from(map.values());
 
         if (filter === "All") return allStudents;
-        return allStudents.filter(s => s.behavior === filter);
+        return allStudents.filter(s => s.behavior.toLowerCase() === filter.toLowerCase());
     }, [events, filter]);
 
-    const behaviors = ["All", "head down", "turning around", "writing", "upright"];
+    const behaviors = ["All", "Head Down", "Turning Around", "Writing", "Upright"];
 
     return (
         <div>

@@ -1,6 +1,5 @@
 import cv2 as cv
 import time
-import sys
 import numpy as np
 import supervision as sv
 
@@ -12,7 +11,7 @@ from src.supabase_client import log_event
 from src.profiler import Profiler
 
 class ClassroomMonitorStage2:
-    def __init__(self, input_source, detector, recognizer=None, behavior_classifier=None, behavior_interval=1.0, recheck_interval=2.0, detect_interval=2, save_output=False, output_file='output_stage2_tracked.mp4', processing_width=960, display=True):
+    def __init__(self, input_source, detector, recognizer=None, behavior_classifier=None, behavior_interval=1.0, recheck_interval=2.0, detect_interval=2, save_output=False, output_file='output_stage2_tracked.mp4', processing_width=960, display=True, event_callback=None):
         self.cap = cv.VideoCapture(input_source)
         self.detector = detector
         self.recognizer = recognizer
@@ -28,6 +27,7 @@ class ClassroomMonitorStage2:
         # NEW: Track Manager
         self.behavior_classifier = behavior_classifier
         self.behavior_interval = behavior_interval
+        self.event_callback = event_callback
         self.track_manager = TrackManager(
             recheck_interval=recheck_interval,
             behavior_classifier=self.behavior_classifier,
@@ -42,8 +42,7 @@ class ClassroomMonitorStage2:
         self.writer = None
         
         if not self.cap.isOpened():
-            print(f"Error: Cannot open input source {input_source}")
-            sys.exit(1)
+            raise RuntimeError(f"Cannot open input source: {input_source}")
 
         # Original Dimensions
         self.orig_width = int(self.cap.get(cv.CAP_PROP_FRAME_WIDTH))
@@ -171,6 +170,13 @@ class ClassroomMonitorStage2:
                         # Update state
                         meta['last_logged_behavior'] = current_b
                         meta['last_logged_time'] = current_time
+                        if self.event_callback:
+                            self.event_callback({
+                                "track_id": track_id,
+                                "name": meta.get("name", "Unknown"),
+                                "behavior": current_b,
+                                "confidence": float(meta.get("behavior_conf", 0.0)),
+                            })
         self.profiler.stop('logging_check')
 
         # 5. Conflict Resolution (Fixes)

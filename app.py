@@ -9,6 +9,10 @@ import logging
 import time
 import tempfile
 import threading
+import json
+import asyncio
+from collections import deque
+from datetime import datetime, timezone
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -21,14 +25,24 @@ from src.detector import YunetFaceDetector
 from src.recognizer import FaceRecognizer
 from src.monitor import ClassroomMonitorStage2
 from src.behavior_classifier import BehaviorClassifier
+from src.supabase_client import clear_classroom_events
 
 app = FastAPI()
+
+# Comma-separated list of allowed origins, or "*" for open development mode.
+raw_cors_origins = os.getenv("CORS_ORIGINS", "*").strip()
+if raw_cors_origins == "*":
+    cors_origins = ["*"]
+    cors_allow_credentials = False
+else:
+    cors_origins = [origin.strip() for origin in raw_cors_origins.split(",") if origin.strip()]
+    cors_allow_credentials = True
 
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=cors_origins,
+    allow_credentials=cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -67,6 +81,16 @@ class AppConfig:
         self.max_stream_seconds = _env_int("MAX_STREAM_SECONDS", 0)
         self.recognition_threshold = _env_float("RECOGNITION_THRESHOLD", 0.1)
         self.recognition_min_margin = _env_float("RECOGNITION_MIN_MARGIN", 0.01)
+        raw_behavior_classes = os.getenv(
+            "BEHAVIOR_EXPECTED_CLASSES",
+            "upright,writing,head down,turning around,other"
+        )
+        self.behavior_expected_classes = [
+            c.strip().lower().replace("_", " ")
+            for c in raw_behavior_classes.split(",")
+            if c.strip()
+        ]
+        self.strict_behavior_model = _env_bool("STRICT_BEHAVIOR_MODEL", True)
 
 
 CONFIG = AppConfig()
@@ -85,20 +109,42 @@ class StreamState:
         self.active_upload_path = None
         self.model_path = 'face_detection_yunet_2023mar_int8.onnx'
         self.faces_dir = 'faces'
-        self.behavior_model_path = 'runs/classify/behavior_model2/weights/best.pt'
+        self.behavior_model_path = os.getenv("BEHAVIOR_MODEL_PATH", "best.pt")
         
         self.active_count = 0
+        self.log_buffer = deque(maxlen=500)
+        self.log_sequence = 0
         
         # Models
         self.detector = None
         self.recognizer = None
         self.behavior_classifier = None
+        self.behavior_model_valid = None
+        self.behavior_model_classes = []
+
+    def add_log(self, message: str, level: str = "info", **details):
+        with self.lock:
+            self.log_sequence += 1
+            log_entry = {
+                "id": self.log_sequence,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "level": level,
+                "message": message,
+                "details": details,
+            }
+            self.log_buffer.append(log_entry)
+            return log_entry
+
+    def get_logs_since(self, last_id: int):
+        with self.lock:
+            return [entry for entry in self.log_buffer if entry["id"] > last_id]
 
     def load_models(self):
         try:
             if self.detector is None:
                 self.detector = YunetFaceDetector(model_path=self.model_path)
                 logger.info("Detector loaded")
+                self.add_log("Detector model loaded", "system", component="detector")
             
             if self.recognizer is None and os.path.exists(self.faces_dir):
                 self.recognizer = FaceRecognizer(
@@ -107,12 +153,66 @@ class StreamState:
                     min_margin=CONFIG.recognition_min_margin
                 )
                 logger.info("Recognizer loaded")
+                self.add_log("Face recognizer loaded", "system", component="recognizer")
+            elif self.recognizer is None:
+                self.add_log(
+                    "Face recognizer skipped: faces directory missing",
+                    "warning",
+                    component="recognizer",
+                    faces_dir=self.faces_dir,
+                )
                 
             if self.behavior_classifier is None and os.path.exists(self.behavior_model_path):
-                self.behavior_classifier = BehaviorClassifier(self.behavior_model_path)
-                logger.info("Behavior Classifier loaded")
+                candidate_classifier = BehaviorClassifier(self.behavior_model_path)
+                valid, loaded_classes, missing = self._validate_behavior_model(candidate_classifier)
+                self.behavior_model_valid = valid
+                self.behavior_model_classes = loaded_classes
+
+                if valid or not CONFIG.strict_behavior_model:
+                    self.behavior_classifier = candidate_classifier
+                    logger.info("Behavior Classifier loaded")
+                    self.add_log(
+                        "Behavior classifier loaded",
+                        "system",
+                        component="behavior_classifier",
+                        strict_mode=CONFIG.strict_behavior_model,
+                        valid_for_classroom=valid,
+                        classes=loaded_classes,
+                    )
+                else:
+                    self.behavior_classifier = None
+                    self.add_log(
+                        "Behavior classifier rejected: incompatible class set",
+                        "error",
+                        component="behavior_classifier",
+                        expected_classes=CONFIG.behavior_expected_classes,
+                        loaded_classes=loaded_classes,
+                        missing_expected=missing,
+                        model_path=self.behavior_model_path,
+                    )
+            elif self.behavior_classifier is None:
+                self.add_log(
+                    "Behavior classifier skipped: model file missing",
+                    "warning",
+                    component="behavior_classifier",
+                    expected_path=self.behavior_model_path,
+                )
         except Exception as e:
             logger.error(f"Error loading models: {e}")
+            self.add_log("Error loading models", "error", error=str(e))
+
+    def _validate_behavior_model(self, classifier: BehaviorClassifier):
+        raw_names = classifier.model.names
+        if isinstance(raw_names, dict):
+            loaded = [str(v) for _, v in sorted(raw_names.items(), key=lambda x: int(x[0]))]
+        else:
+            loaded = [str(v) for v in raw_names]
+
+        loaded_norm = {name.strip().lower().replace("_", " ") for name in loaded}
+        expected = set(CONFIG.behavior_expected_classes)
+        missing = sorted(expected - loaded_norm)
+        is_valid = len(missing) == 0
+        return is_valid, loaded, missing
 
 state = StreamState()
 
@@ -157,6 +257,7 @@ async def start_stream(
             state.active_source_type = "upload"
             state.active_upload_path = file_path
         logger.info(f"Stream configured for upload: {file_path}")
+        state.add_log("Upload stream configured", "system", source_type="upload", filename=safe_name)
         
     elif type == 'live':
         with state.lock:
@@ -164,6 +265,7 @@ async def start_stream(
             state.active_source_type = "live"
             state.active_upload_path = None
         logger.info("Stream configured for live camera")
+        state.add_log("Live camera stream configured", "system", source_type="live")
         
     else:
         raise HTTPException(status_code=400, detail="Invalid type")
@@ -171,6 +273,7 @@ async def start_stream(
     with state.lock:
         # Allow the new session to start.
         state.stop_requested = False
+    state.add_log("Stream start requested", "system", stream_type=type)
     return {"status": "configured", "type": type}
 
 @app.post("/stop_stream")
@@ -200,7 +303,43 @@ async def stop_stream():
             os.remove(active_upload_path)
         except Exception as e:
             logger.warning(f"Failed to cleanup upload file {active_upload_path}: {e}")
+    state.add_log("Stream stop requested", "system")
     return {"status": "stopping"}
+
+@app.post("/reset_data")
+async def reset_data():
+    """
+    Stop active stream (if any), clear Supabase classroom events, and clear in-memory logs.
+    """
+    with state.lock:
+        state.stop_requested = True
+        state.stream_token += 1
+        state.is_running = False
+        state.active_count = 0
+        active_monitor = state.active_monitor
+        active_upload_path = state.active_upload_path
+        source_type = state.active_source_type
+        state.active_monitor = None
+        state.source = None
+        state.active_source_type = None
+        state.active_upload_path = None
+    try:
+        if active_monitor is not None and active_monitor.cap:
+            active_monitor.cap.release()
+    except Exception:
+        pass
+    if CONFIG.cleanup_uploads and source_type == "upload" and active_upload_path and os.path.exists(active_upload_path):
+        try:
+            os.remove(active_upload_path)
+        except Exception as e:
+            logger.warning(f"Failed to cleanup upload file during reset {active_upload_path}: {e}")
+
+    deleted = clear_classroom_events()
+    with state.lock:
+        state.log_buffer.clear()
+        # Reset sequence so a fresh run starts from clean log IDs.
+        state.log_sequence = 0
+    return {"status": "ok", "supabase_deleted": deleted}
 
 def generate_frames():
     """
@@ -222,6 +361,16 @@ def generate_frames():
     # but for simplicity, new stream = new session.
     
     try:
+        def on_detection_event(event):
+            state.add_log(
+                "Detection updated",
+                "detection",
+                student_id=event.get("name", "Unknown"),
+                tracker_id=event.get("track_id"),
+                behavior=event.get("behavior", "Neutral"),
+                confidence=event.get("confidence", 0.0),
+            )
+
         monitor = ClassroomMonitorStage2(
             input_source=local_source,
             detector=state.detector,
@@ -232,13 +381,15 @@ def generate_frames():
             recheck_interval=CONFIG.recheck_interval,
             save_output=False,
             processing_width=CONFIG.processing_width,
-            display=False
+            display=False,
+            event_callback=on_detection_event
         )
         with state.lock:
             state.active_monitor = monitor
             state.is_running = True
         
         logger.info(f"Starting generator for source: {local_source}")
+        state.add_log("Video stream started", "system", source_type=active_source_type)
         started_at = time.time()
         
         while True:
@@ -255,6 +406,7 @@ def generate_frames():
             ret, frame = monitor.cap.read()
             if not ret:
                 logger.info("Stream ended (EOF or Error)")
+                state.add_log("Stream ended (EOF or source error)", "warning")
                 break
                 
             # Process
@@ -274,6 +426,7 @@ def generate_frames():
             
     except Exception as e:
         logger.error(f"Stream error: {e}")
+        state.add_log("Streaming runtime error", "error", error=str(e))
     finally:
         with state.lock:
             state.active_count = 0
@@ -289,6 +442,7 @@ def generate_frames():
                 os.remove(active_upload_path)
             except Exception as e:
                 logger.warning(f"Failed to cleanup upload file {active_upload_path}: {e}")
+        state.add_log("Video stream stopped", "system")
 
 @app.get("/video_feed")
 async def video_feed():
@@ -308,6 +462,44 @@ async def video_feed():
         media_type="multipart/x-mixed-replace; boundary=frame",
         headers=headers
     )
+
+@app.get("/logs/stream")
+async def stream_logs():
+    """
+    Server-Sent Events stream for frontend terminal logs.
+    """
+    async def event_generator():
+        last_id = 0
+        heartbeat_at = time.monotonic()
+        try:
+            yield "event: connected\ndata: {}\n\n"
+            while True:
+                new_logs = state.get_logs_since(last_id)
+                for entry in new_logs:
+                    last_id = entry["id"]
+                    payload = json.dumps(entry)
+                    yield f"id: {entry['id']}\nevent: log\ndata: {payload}\n\n"
+                # Keep SSE connection alive through proxies/load balancers.
+                if (time.monotonic() - heartbeat_at) >= 10:
+                    heartbeat_at = time.monotonic()
+                    yield "event: heartbeat\ndata: {}\n\n"
+                await asyncio.sleep(0.4)
+        except (asyncio.CancelledError, GeneratorExit):
+            return
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    }
+    return StreamingResponse(event_generator(), media_type="text/event-stream", headers=headers)
+
+@app.get("/logs")
+async def get_logs(since_id: int = 0):
+    """
+    Polling fallback endpoint for terminal logs.
+    """
+    return {"logs": state.get_logs_since(since_id)}
 
 @app.get("/stats")
 async def get_stats():
@@ -342,6 +534,9 @@ async def get_config():
                 "detector_loaded": state.detector is not None,
                 "recognizer_loaded": state.recognizer is not None,
                 "behavior_classifier_loaded": state.behavior_classifier is not None,
+                "behavior_model_valid": state.behavior_model_valid,
+                "behavior_model_classes": state.behavior_model_classes,
+                "behavior_expected_classes": CONFIG.behavior_expected_classes,
                 "detector_model_exists": os.path.exists(state.model_path),
                 "behavior_model_exists": os.path.exists(state.behavior_model_path),
                 "faces_dir_exists": os.path.exists(state.faces_dir),

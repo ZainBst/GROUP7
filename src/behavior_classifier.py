@@ -1,6 +1,5 @@
 # src/behavior_classifier.py
 from ultralytics import YOLO
-import cv2
 import numpy as np
 
 class BehaviorClassifier:
@@ -18,7 +17,7 @@ class BehaviorClassifier:
         print(f"[Behavior] Loaded model: {model_path} on {device}")
         print(f"[Behavior] Classes: {self.model.names}")
 
-    def classify(self, crop: np.ndarray, conf_threshold: float = 0.45) -> tuple[str, float]:
+    def classify(self, crop: np.ndarray, conf_threshold: float = 0.35) -> tuple[str, float]:
         """
         Classify behavior on an upper-body crop.
         Returns (class_name, confidence) or ("Neutral", 0.0)
@@ -37,11 +36,11 @@ class BehaviorClassifier:
 
         # Per-Class Thresholds
         thresholds = {
-            'head down': 0.5,
-            'turning around': 0.5,
-            'writing': 0.5,
-            'upright': 0.4,
-            'other': 1
+            'head down': 0.40,
+            'turning around': 0.40,
+            'writing': 0.40,
+            'upright': 0.32,
+            'other': 0.60
         }
         
         # Use specific threshold if set, otherwise default to conf_threshold
@@ -52,7 +51,7 @@ class BehaviorClassifier:
 
         return class_name, confidence
 
-    def classify_batch(self, crops: list[np.ndarray], conf_threshold: float = 0.45) -> list[tuple[str, float]]:
+    def classify_batch(self, crops: list[np.ndarray], conf_threshold: float = 0.35) -> list[tuple[str, float]]:
         """
         Classify a batch of crops.
         Returns a list of (class_name, confidence) tuples.
@@ -66,11 +65,11 @@ class BehaviorClassifier:
         batch_output = []
         
         thresholds = {
-            'head down': 0.5,
-            'turning around': 0.5,
-            'writing': 0.5,
-            'upright': 0.5,
-            'other': 0.75
+            'head down': 0.40,
+            'turning around': 0.40,
+            'writing': 0.40,
+            'upright': 0.32,
+            'other': 0.60
         }
 
         for r in results:

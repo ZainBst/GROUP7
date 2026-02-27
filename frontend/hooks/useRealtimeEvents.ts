@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 export interface Event {
@@ -14,25 +13,37 @@ export interface Event {
 
 export function useRealtimeEvents() {
     const [events, setEvents] = useState<Event[]>([]);
+    const resetVersionRef = useRef(0);
 
     useEffect(() => {
+        const client = supabase;
+        if (!client) {
+            return;
+        }
+
         // 1. Fetch initial data (last 100 events)
         const fetchInitial = async () => {
-            const { data, error } = await supabase
+            const versionAtRequest = resetVersionRef.current;
+            const { data } = await client
                 .from("classroom_events")
                 .select("*")
                 .order("created_at", { ascending: false })
                 .limit(100);
 
-            if (data) {
+            if (data && versionAtRequest === resetVersionRef.current) {
                 setEvents(data.reverse()); // Show oldest to newest for graphs
             }
         };
 
         fetchInitial();
 
+        const handleEventsReset = () => {
+            resetVersionRef.current += 1;
+            setEvents([]);
+        };
+
         // 2. Subscribe to new inserts
-        const channel = supabase
+        const channel = client
             .channel("realtime-events")
             .on(
                 "postgres_changes",
@@ -44,8 +55,11 @@ export function useRealtimeEvents() {
             )
             .subscribe();
 
+        window.addEventListener("eventsReset", handleEventsReset);
+
         return () => {
-            supabase.removeChannel(channel);
+            window.removeEventListener("eventsReset", handleEventsReset);
+            client.removeChannel(channel);
         };
     }, []);
 

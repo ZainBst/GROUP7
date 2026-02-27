@@ -91,3 +91,26 @@ def log_event(tracker_id: int, name: str, behavior: str, confidence: float):
     Logs a behavior event using the batched logger.
     """
     get_logger().log(tracker_id, name, behavior, confidence)
+
+
+def clear_classroom_events() -> bool:
+    """
+    Delete all rows from classroom_events to keep storage usage bounded.
+    Returns True on success.
+    """
+    if not supabase:
+        return False
+    try:
+        logger = get_logger()
+        if logger:
+            # Drop queued events so a reset does not immediately refill old items.
+            try:
+                while True:
+                    logger.queue.get_nowait()
+            except queue.Empty:
+                pass
+        supabase.table("classroom_events").delete().gt("id", -1).execute()
+        return True
+    except Exception as e:
+        print(f"❌ Failed to clear classroom_events: {e}")
+        return False
