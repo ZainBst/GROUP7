@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "antigravitt - Behavior Monitor",
+  title: "BehaviorNet - Behavior Monitor",
   description: "Real-time AI behavior analysis",
 };
 

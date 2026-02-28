@@ -28,3 +28,4 @@ runs/
 # Local Brain
 .gemini/
 antigravity/
+*.yml
