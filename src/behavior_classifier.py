@@ -1,25 +1,33 @@
 # src/behavior_classifier.py
+import os
+
 from ultralytics import YOLO
 import numpy as np
 
+
 class BehaviorClassifier:
     def __init__(self, model_path: str):
-        """Load YOLO11 classification model"""
+        """Load YOLO11 classification model."""
         import torch
-        if torch.cuda.is_available():
-            device = 'cuda'
+
+        forced_device = os.getenv("FORCE_TORCH_DEVICE", "").strip().lower()
+        if forced_device:
+            device = forced_device
+        elif torch.cuda.is_available():
+            device = "cuda"
         elif torch.backends.mps.is_available():
-            device = 'mps'
+            device = "mps"
         else:
-            device = 'cpu'
+            device = "cpu"
+
         self.model = YOLO(model_path)
         self.model.to(device)
         self.thresholds = {
-            'head down': 0.40,
-            'turning around': 0.40,
-            'writing': 0.40,
-            'upright': 0.32,
-            'other': 0.60
+            "head down": 0.40,
+            "turning around": 0.40,
+            "writing": 0.40,
+            "upright": 0.32,
+            "other": 0.60,
         }
         print(f"[Behavior] Loaded model: {model_path} on {device}")
         print(f"[Behavior] Classes: {self.model.names}")
@@ -60,9 +68,9 @@ class BehaviorClassifier:
 
         # YOLO11 batch inference
         results = self.model.predict(crops, verbose=False)
-        
+
         batch_output = []
-        
+
         for r in results:
             if not r or len(r.probs.data) == 0:
                 batch_output.append(("Neutral", 0.0))
@@ -72,12 +80,12 @@ class BehaviorClassifier:
             confidence = float(r.probs.top1conf)
             class_name = self.model.names[top_idx]
             class_name_norm = str(class_name).strip().lower().replace("_", " ")
-            
+
             required_conf = self.thresholds.get(class_name_norm, conf_threshold)
-            
+
             if confidence < required_conf:
                 batch_output.append(("Neutral", confidence))
             else:
                 batch_output.append((class_name, confidence))
-                
+
         return batch_output

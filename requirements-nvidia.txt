@@ -1,0 +1,13 @@
+# NVIDIA-optimized environment for Windows/Linux laptops with NVIDIA GPU.
+# Install with: pip install -r requirements-nvidia.txt
+
+-r requirements.txt
+
+# PyTorch CUDA 12.1 wheels (used by Ultralytics/YOLO behavior model).
+--extra-index-url https://download.pytorch.org/whl/cu121
+torch==2.4.1+cu121
+torchvision==0.19.1+cu121
+torchaudio==2.4.1+cu121
+
+# ONNX Runtime GPU for InsightFace acceleration.
+onnxruntime-gpu==1.18.1

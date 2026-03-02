@@ -27,6 +27,7 @@ from src.recognizer import FaceRecognizer
 from src.monitor import ClassroomMonitorStage2
 from src.behavior_classifier import BehaviorClassifier
 from src.supabase_client import clear_classroom_events
+from src.runtime_utils import get_acceleration_status
 
 app = FastAPI()
 
@@ -604,7 +605,8 @@ async def get_config():
                 "behavior_model_exists": os.path.exists(state.behavior_model_path),
                 "faces_dir_exists": os.path.exists(state.faces_dir),
                 "embeddings_cache_exists": os.path.exists(os.path.join(state.faces_dir, "embeddings.pkl")),
-            }
+            },
+            "acceleration": get_acceleration_status()
         }
 
 @app.get("/health")
