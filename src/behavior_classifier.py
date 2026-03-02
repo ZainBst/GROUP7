@@ -14,6 +14,13 @@ class BehaviorClassifier:
             device = 'cpu'
         self.model = YOLO(model_path)
         self.model.to(device)
+        self.thresholds = {
+            'head down': 0.40,
+            'turning around': 0.40,
+            'writing': 0.40,
+            'upright': 0.32,
+            'other': 0.60
+        }
         print(f"[Behavior] Loaded model: {model_path} on {device}")
         print(f"[Behavior] Classes: {self.model.names}")
 
@@ -34,17 +41,9 @@ class BehaviorClassifier:
         confidence = float(results[0].probs.top1conf)
         class_name = self.model.names[top_idx]
 
-        # Per-Class Thresholds
-        thresholds = {
-            'head down': 0.40,
-            'turning around': 0.40,
-            'writing': 0.40,
-            'upright': 0.32,
-            'other': 0.60
-        }
-        
+        class_name_norm = str(class_name).strip().lower().replace("_", " ")
         # Use specific threshold if set, otherwise default to conf_threshold
-        required_conf = thresholds.get(class_name, conf_threshold)
+        required_conf = self.thresholds.get(class_name_norm, conf_threshold)
 
         if confidence < required_conf:
             return "Neutral", confidence
@@ -64,14 +63,6 @@ class BehaviorClassifier:
         
         batch_output = []
         
-        thresholds = {
-            'head down': 0.40,
-            'turning around': 0.40,
-            'writing': 0.40,
-            'upright': 0.32,
-            'other': 0.60
-        }
-
         for r in results:
             if not r or len(r.probs.data) == 0:
                 batch_output.append(("Neutral", 0.0))
@@ -80,8 +71,9 @@ class BehaviorClassifier:
             top_idx = r.probs.top1
             confidence = float(r.probs.top1conf)
             class_name = self.model.names[top_idx]
+            class_name_norm = str(class_name).strip().lower().replace("_", " ")
             
-            required_conf = thresholds.get(class_name, conf_threshold)
+            required_conf = self.thresholds.get(class_name_norm, conf_threshold)
             
             if confidence < required_conf:
                 batch_output.append(("Neutral", confidence))

@@ -21,6 +21,12 @@ class FaceRecognizer:
         
         # Cache Recognition Model for fast access
         self.rec_model = self._get_recognition_model()
+        self._face_align = None
+        try:
+            from insightface.utils import face_align as _face_align
+            self._face_align = _face_align
+        except Exception:
+            self._face_align = None
         
         # Load DB
         self.cache_path = os.path.join(self.faces_dir, 'embeddings.pkl')
@@ -69,11 +75,10 @@ class FaceRecognizer:
 
         embedding = None
         
-        if landmarks is not None:
+        if landmarks is not None and self._face_align is not None:
              # Fast Path: Alignment -> Embedding
              try:
-                 from insightface.utils import face_align
-                 norm_face = face_align.norm_crop(face_img, landmark=landmarks)
+                 norm_face = self._face_align.norm_crop(face_img, landmark=landmarks)
                  embedding = self.rec_model.get_feat(norm_face).flatten()
              except Exception as e:
                  print(f"Align Error: {e}")
@@ -87,7 +92,10 @@ class FaceRecognizer:
              embedding = target.embedding
 
         # Normalize input embedding
-        embedding = embedding / np.linalg.norm(embedding)
+        emb_norm = float(np.linalg.norm(embedding))
+        if emb_norm < 1e-10:
+            return "Unknown", 0.0
+        embedding = embedding / emb_norm
         
         if len(self.known_embeddings) == 0:
             return "Unknown", 0.0

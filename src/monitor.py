@@ -11,7 +11,23 @@ from src.supabase_client import log_event
 from src.profiler import Profiler
 
 class ClassroomMonitorStage2:
-    def __init__(self, input_source, detector, recognizer=None, behavior_classifier=None, behavior_interval=1.0, recheck_interval=2.0, detect_interval=2, save_output=False, output_file='output_stage2_tracked.mp4', processing_width=960, display=True, event_callback=None):
+    def __init__(
+        self,
+        input_source,
+        detector,
+        recognizer=None,
+        behavior_classifier=None,
+        behavior_interval=1.0,
+        recheck_interval=2.0,
+        detect_interval=2,
+        save_output=False,
+        output_file='output_stage2_tracked.mp4',
+        processing_width=960,
+        display=True,
+        event_callback=None,
+        min_recognition_face_size=36,
+        min_recognition_face_score=0.70,
+    ):
         self.cap = cv.VideoCapture(input_source)
         self.detector = detector
         self.recognizer = recognizer
@@ -31,7 +47,9 @@ class ClassroomMonitorStage2:
         self.track_manager = TrackManager(
             recheck_interval=recheck_interval,
             behavior_classifier=self.behavior_classifier,
-            behavior_interval=self.behavior_interval
+            behavior_interval=self.behavior_interval,
+            min_recognition_face_size=min_recognition_face_size,
+            min_recognition_face_score=min_recognition_face_score,
         )
         
         self.fps = 0
@@ -40,6 +58,7 @@ class ClassroomMonitorStage2:
         self.start_time = time.time()
         self.save_output = save_output
         self.writer = None
+        self.last_detections = sv.Detections.empty()
         
         if not self.cap.isOpened():
             raise RuntimeError(f"Cannot open input source: {input_source}")
@@ -125,7 +144,7 @@ class ClassroomMonitorStage2:
              # ByteTrack internal KF needs `update` to predict. 
              # Since we lack an explicit "predict_only" in this wrapper, we reuse `self.last_detections`.
              # Visuals will be "stuttery" (boxes won't move for 1 frame), but acceptable for 50% compute save.
-             detections = getattr(self, 'last_detections', sv.Detections.empty())
+             detections = self.last_detections
              
         self.profiler.stop('tracking')
 
@@ -223,7 +242,6 @@ class ClassroomMonitorStage2:
                     if key == ord('q') or key == 27: break
         finally:
             self.cap.release()
-            if self.writer: self.writer.release()
             if self.writer: self.writer.release()
             if self.display:
                 cv.destroyAllWindows()

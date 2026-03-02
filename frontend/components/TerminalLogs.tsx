@@ -39,6 +39,7 @@ export function TerminalLogs() {
     const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const lastLogIdRef = useRef(0);
     const fallbackEnabledRef = useRef(false);
+    const seenLogIdsRef = useRef<Set<number>>(new Set());
 
     useEffect(() => {
         let stream: EventSource | null = null;
@@ -88,6 +89,10 @@ export function TerminalLogs() {
                 try {
                     const entry = JSON.parse((event as MessageEvent).data) as BackendLog;
                     lastLogIdRef.current = Math.max(lastLogIdRef.current, entry.id);
+                    if (seenLogIdsRef.current.has(entry.id)) {
+                        return;
+                    }
+                    seenLogIdsRef.current.add(entry.id);
                     setLogs((prev) => [...prev.slice(-199), formatLog(entry)]);
                 } catch {
                     // Ignore malformed log events from the stream.
@@ -155,16 +160,21 @@ export function TerminalLogs() {
                     for (const entry of items) {
                         lastLogIdRef.current = Math.max(lastLogIdRef.current, entry.id);
                     }
+                    const next = items.filter((entry) => !seenLogIdsRef.current.has(entry.id));
+                    next.forEach((entry) => seenLogIdsRef.current.add(entry.id));
+                    if (next.length === 0) {
+                        return;
+                    }
                     setLogs((prev) => [
-                        ...prev.slice(-(200 - items.length)),
-                        ...items.map(formatLog),
+                        ...prev.slice(-(200 - next.length)),
+                        ...next.map(formatLog),
                     ]);
                 } catch {
                     // Ignore transient polling failures.
                 }
             };
             poll();
-            pollingIntervalRef.current = setInterval(poll, 1000);
+            pollingIntervalRef.current = setInterval(poll, 3000);
         };
 
         connect();
@@ -187,12 +197,14 @@ export function TerminalLogs() {
         const handleStreamStarted = () => {
             setLogs([]);
             lastLogIdRef.current = 0;
+            seenLogIdsRef.current.clear();
         };
         const handleTerminalClear = () => {
             setLogs([]);
             lastLogIdRef.current = 0;
             reconnectAttemptsRef.current = 0;
             fallbackEnabledRef.current = false;
+            seenLogIdsRef.current.clear();
         };
 
         window.addEventListener("streamStarted", handleStreamStarted);

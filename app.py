@@ -13,6 +13,7 @@ import json
 import asyncio
 from collections import deque
 from datetime import datetime, timezone
+from typing import Optional
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -71,6 +72,7 @@ def _env_float(name: str, default: float) -> float:
 
 class AppConfig:
     def __init__(self):
+        self.base_dir = os.path.dirname(os.path.abspath(__file__))
         self.upload_dir = os.getenv("UPLOAD_DIR", os.path.join(tempfile.gettempdir(), "classroom_uploads"))
         self.cleanup_uploads = _env_bool("CLEANUP_UPLOADS", True)
         self.detect_interval = _env_int("DETECT_INTERVAL", 1)
@@ -81,6 +83,19 @@ class AppConfig:
         self.max_stream_seconds = _env_int("MAX_STREAM_SECONDS", 0)
         self.recognition_threshold = _env_float("RECOGNITION_THRESHOLD", 0.1)
         self.recognition_min_margin = _env_float("RECOGNITION_MIN_MARGIN", 0.01)
+        # Disabled by default to preserve pre-automation recognition behavior.
+        # Set >0 values to enable quality gating.
+        self.min_recognition_face_size = _env_int("MIN_RECOGNITION_FACE_SIZE", 0)
+        self.min_recognition_face_score = _env_float("MIN_RECOGNITION_FACE_SCORE", 0.0)
+        self.detector_model_path = os.getenv(
+            "DETECTOR_MODEL_PATH",
+            os.path.join(self.base_dir, "face_detection_yunet_2023mar_int8.onnx")
+        )
+        self.faces_dir = os.getenv("FACES_DIR", os.path.join(self.base_dir, "faces"))
+        self.behavior_model_path = os.getenv(
+            "BEHAVIOR_MODEL_PATH",
+            os.path.join(self.base_dir, "best.pt")
+        )
         raw_behavior_classes = os.getenv(
             "BEHAVIOR_EXPECTED_CLASSES",
             "upright,writing,head down,turning around,other"
@@ -107,13 +122,15 @@ class StreamState:
         self.active_monitor = None
         self.active_source_type = None
         self.active_upload_path = None
-        self.model_path = 'face_detection_yunet_2023mar_int8.onnx'
-        self.faces_dir = 'faces'
-        self.behavior_model_path = os.getenv("BEHAVIOR_MODEL_PATH", "best.pt")
+        self.model_path = CONFIG.detector_model_path
+        self.faces_dir = CONFIG.faces_dir
+        self.behavior_model_path = CONFIG.behavior_model_path
         
         self.active_count = 0
         self.log_buffer = deque(maxlen=500)
         self.log_sequence = 0
+        self.event_buffer = deque(maxlen=1000)
+        self.event_sequence = 0
         
         # Models
         self.detector = None
@@ -139,6 +156,24 @@ class StreamState:
         with self.lock:
             return [entry for entry in self.log_buffer if entry["id"] > last_id]
 
+    def add_event(self, name: str, behavior: str, confidence: float, tracker_id: Optional[int] = None):
+        with self.lock:
+            self.event_sequence += 1
+            event = {
+                "id": self.event_sequence,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "name": name,
+                "behavior": behavior,
+                "confidence": float(confidence),
+                "tracker_id": tracker_id,
+            }
+            self.event_buffer.append(event)
+            return event
+
+    def get_events_since(self, last_id: int):
+        with self.lock:
+            return [entry for entry in self.event_buffer if entry["id"] > last_id]
+
     def load_models(self):
         try:
             if self.detector is None:
@@ -146,20 +181,29 @@ class StreamState:
                 logger.info("Detector loaded")
                 self.add_log("Detector model loaded", "system", component="detector")
             
-            if self.recognizer is None and os.path.exists(self.faces_dir):
+            embeddings_path = os.path.join(self.faces_dir, "embeddings.pkl")
+            if self.recognizer is None and os.path.exists(self.faces_dir) and os.path.exists(embeddings_path):
                 self.recognizer = FaceRecognizer(
                     faces_dir=self.faces_dir,
                     threshold=CONFIG.recognition_threshold,
                     min_margin=CONFIG.recognition_min_margin
                 )
-                logger.info("Recognizer loaded")
-                self.add_log("Face recognizer loaded", "system", component="recognizer")
+                known_count = len(self.recognizer.known_faces)
+                logger.info(f"Recognizer loaded with {known_count} known identities")
+                self.add_log(
+                    "Face recognizer loaded",
+                    "system",
+                    component="recognizer",
+                    known_identities=known_count,
+                    cache_path=embeddings_path,
+                )
             elif self.recognizer is None:
                 self.add_log(
-                    "Face recognizer skipped: faces directory missing",
+                    "Face recognizer skipped: faces directory or embeddings cache missing",
                     "warning",
                     component="recognizer",
                     faces_dir=self.faces_dir,
+                    cache_path=embeddings_path,
                 )
                 
             if self.behavior_classifier is None and os.path.exists(self.behavior_model_path):
@@ -339,6 +383,8 @@ async def reset_data():
         state.log_buffer.clear()
         # Reset sequence so a fresh run starts from clean log IDs.
         state.log_sequence = 0
+        state.event_buffer.clear()
+        state.event_sequence = 0
     return {"status": "ok", "supabase_deleted": deleted}
 
 def generate_frames():
@@ -362,6 +408,12 @@ def generate_frames():
     
     try:
         def on_detection_event(event):
+            state.add_event(
+                name=event.get("name", "Unknown"),
+                behavior=event.get("behavior", "Neutral"),
+                confidence=event.get("confidence", 0.0),
+                tracker_id=event.get("track_id"),
+            )
             state.add_log(
                 "Detection updated",
                 "detection",
@@ -382,7 +434,9 @@ def generate_frames():
             save_output=False,
             processing_width=CONFIG.processing_width,
             display=False,
-            event_callback=on_detection_event
+            event_callback=on_detection_event,
+            min_recognition_face_size=CONFIG.min_recognition_face_size,
+            min_recognition_face_score=CONFIG.min_recognition_face_score,
         )
         with state.lock:
             state.active_monitor = monitor
@@ -501,6 +555,13 @@ async def get_logs(since_id: int = 0):
     """
     return {"logs": state.get_logs_since(since_id)}
 
+@app.get("/events")
+async def get_events(since_id: int = 0):
+    """
+    Polling endpoint for behavior events used by dashboard components.
+    """
+    return {"events": state.get_events_since(since_id)}
+
 @app.get("/stats")
 async def get_stats():
     with state.lock:
@@ -524,6 +585,8 @@ async def get_config():
                 "max_stream_seconds": CONFIG.max_stream_seconds,
                 "recognition_threshold": CONFIG.recognition_threshold,
                 "recognition_min_margin": CONFIG.recognition_min_margin,
+                "min_recognition_face_size": CONFIG.min_recognition_face_size,
+                "min_recognition_face_score": CONFIG.min_recognition_face_score,
             },
             "state": {
                 "is_running": state.is_running,
@@ -540,6 +603,7 @@ async def get_config():
                 "detector_model_exists": os.path.exists(state.model_path),
                 "behavior_model_exists": os.path.exists(state.behavior_model_path),
                 "faces_dir_exists": os.path.exists(state.faces_dir),
+                "embeddings_cache_exists": os.path.exists(os.path.join(state.faces_dir, "embeddings.pkl")),
             }
         }
 

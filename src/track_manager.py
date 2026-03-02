@@ -11,7 +11,9 @@ class TrackManager:
         max_behavior_batch=None,
         stale_track_ttl=5.0,
         id_history_size=8,
-        min_id_hits=2
+        min_id_hits=2,
+        min_recognition_face_size=36,
+        min_recognition_face_score=0.70
     ):
         self.recheck_interval = recheck_interval
         self.behavior_classifier = behavior_classifier
@@ -20,6 +22,8 @@ class TrackManager:
         self.stale_track_ttl = stale_track_ttl
         self.id_history_size = id_history_size
         self.min_id_hits = min_id_hits
+        self.min_recognition_face_size = min_recognition_face_size
+        self.min_recognition_face_score = min_recognition_face_score
         
         # Metadata storage: {track_id: {'name': 'Unknown', 'conf': 0.0, 'last_check_time': 0.0, ...}}
         self.track_metadata = {}
@@ -68,21 +72,21 @@ class TrackManager:
             # dist[i, j] = dist between track i and face j
             # Expand dims for broadcasting: (N, 1, 2) - (1, M, 2) -> (N, M, 2)
             diff = track_centers[:, np.newaxis, :] - face_centers[np.newaxis, :, :]
-            dists = np.sqrt(np.sum(diff**2, axis=2)) # (N, M)
+            dist_sq = np.sum(diff**2, axis=2) # (N, M)
             
             # Thresholds based on track size
             track_widths = xyxy[:, 2] - xyxy[:, 0]
             track_heights = xyxy[:, 3] - xyxy[:, 1]
             max_dims = np.maximum(track_widths, track_heights) # (N,)
-            thresholds = max_dims * 1.5 # (N,)
+            thresholds_sq = (max_dims * 1.5) ** 2 # (N,)
             
             # Global greedy matching (smallest distance first) while enforcing one-to-one assignment.
             pairs = []
-            for ti in range(dists.shape[0]):
-                for fi in range(dists.shape[1]):
-                    dist = dists[ti, fi]
-                    if dist < thresholds[ti]:
-                        pairs.append((dist, ti, fi))
+            for ti in range(dist_sq.shape[0]):
+                for fi in range(dist_sq.shape[1]):
+                    d = dist_sq[ti, fi]
+                    if d < thresholds_sq[ti]:
+                        pairs.append((d, ti, fi))
             pairs.sort(key=lambda x: x[0])
 
             used_tracks = set()
@@ -106,6 +110,8 @@ class TrackManager:
         
         # --- Iterate Tracks ---
         for i in range(len(detections)):
+            if i >= len(track_ids):
+                continue
             track_id = int(track_ids[i])
             active_track_ids.add(track_id)
             x1, y1, x2, y2 = map(int, xyxy[i])
@@ -154,6 +160,15 @@ class TrackManager:
                 x1, y1, x2, y2 = map(int, xyxy[i])
                 try:
                     if best_match_face is not None:
+                        # Gate recognition on face quality to reduce false IDs and wasted compute.
+                        fw = float(best_match_face[2])
+                        fh = float(best_match_face[3])
+                        face_score = float(best_match_face[14]) if len(best_match_face) > 14 else 1.0
+                        gate_by_size = self.min_recognition_face_size > 0 and min(fw, fh) < self.min_recognition_face_size
+                        gate_by_score = self.min_recognition_face_score > 0 and face_score < self.min_recognition_face_score
+                        if gate_by_size or gate_by_score:
+                            meta['last_check_time'] = current_time
+                            continue
                         lm = best_match_face[4:14].reshape(5, 2).astype(np.float32)
                         rec_name, rec_conf = recognizer.recognize(frame, landmarks=lm)
                     else:

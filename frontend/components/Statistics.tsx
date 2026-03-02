@@ -25,7 +25,7 @@ export function Statistics() {
         };
 
         loadStats();
-        const interval = setInterval(loadStats, 2000);
+        const interval = setInterval(loadStats, 5000);
         return () => {
             mounted = false;
             clearInterval(interval);
