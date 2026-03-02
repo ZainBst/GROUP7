@@ -2,6 +2,18 @@
 
 import { useRealtimeEvents } from "@/hooks/useRealtimeEvents";
 import { useMemo } from "react";
+import {
+    Document,
+    Packer,
+    Paragraph,
+    Table,
+    TableCell,
+    TableRow,
+    TextRun,
+    WidthType,
+    HeadingLevel,
+    AlignmentType,
+} from "docx";
 
 type StudentRow = {
     id: string;
@@ -32,22 +44,81 @@ export function StudentTable() {
         );
     }, [events]);
 
-    const handleDownloadCsv = () => {
-        const headers = ["Student ID", "Student Name", "Behaviour", "Confidence", "Timestamp"];
-        const rows = students.map((student) => [
-            student.id,
-            student.name,
-            student.behavior,
-            `${(student.confidence * 100).toFixed(0)}%`,
-            new Date(student.createdAt).toISOString(),
-        ]);
+    const handleDownloadDoc = async () => {
+        const headerLabels = ["Student ID", "Student Name", "Behaviour", "Confidence", "Timestamp"];
 
-        const csv = [headers, ...rows].map((row) => row.join(",")).join("\n");
-        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const headerRow = new TableRow({
+            tableHeader: true,
+            children: headerLabels.map(
+                (label) =>
+                    new TableCell({
+                        width: { size: 20, type: WidthType.PERCENTAGE },
+                        children: [
+                            new Paragraph({
+                                alignment: AlignmentType.CENTER,
+                                children: [new TextRun({ text: label, bold: true, size: 22 })],
+                            }),
+                        ],
+                    })
+            ),
+        });
+
+        const dataRows = students.map(
+            (student) =>
+                new TableRow({
+                    children: [
+                        new TableCell({ children: [new Paragraph(student.id)] }),
+                        new TableCell({ children: [new Paragraph(student.name)] }),
+                        new TableCell({ children: [new Paragraph(student.behavior)] }),
+                        new TableCell({
+                            children: [
+                                new Paragraph(`${(student.confidence * 100).toFixed(0)}%`),
+                            ],
+                        }),
+                        new TableCell({
+                            children: [
+                                new Paragraph(
+                                    new Date(student.createdAt).toLocaleString()
+                                ),
+                            ],
+                        }),
+                    ],
+                })
+        );
+
+        const doc = new Document({
+            sections: [
+                {
+                    children: [
+                        new Paragraph({
+                            text: "BehaviorNet — Student Behavior Report",
+                            heading: HeadingLevel.HEADING_1,
+                            spacing: { after: 200 },
+                        }),
+                        new Paragraph({
+                            children: [
+                                new TextRun({
+                                    text: `Generated: ${new Date().toLocaleString()}`,
+                                    italics: true,
+                                    size: 20,
+                                }),
+                            ],
+                            spacing: { after: 400 },
+                        }),
+                        new Table({
+                            width: { size: 100, type: WidthType.PERCENTAGE },
+                            rows: [headerRow, ...dataRows],
+                        }),
+                    ],
+                },
+            ],
+        });
+
+        const blob = await Packer.toBlob(doc);
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
-        link.download = "students.csv";
+        link.download = "students_report.docx";
         link.click();
         URL.revokeObjectURL(url);
     };
@@ -84,10 +155,10 @@ export function StudentTable() {
 
             <div className="flex justify-end mt-2">
                 <button
-                    onClick={handleDownloadCsv}
+                    onClick={handleDownloadDoc}
                     className="px-4 py-2 bg-transparent border border-border hover:bg-border/30 text-foreground rounded-md transition-colors text-xs font-bold font-mono"
                 >
-                    Download CSV
+                    Download Report (.docx)
                 </button>
             </div>
         </div>
