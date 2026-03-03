@@ -2,6 +2,7 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import cv2 as cv
+import numpy as np
 import os
 import sys
 import shutil
@@ -26,8 +27,12 @@ from src.detector import YunetFaceDetector
 from src.recognizer import FaceRecognizer
 from src.monitor import ClassroomMonitorStage2
 from src.behavior_classifier import BehaviorClassifier
-from src.supabase_client import clear_classroom_events
+from src.track_manager import TrackManager
+from src.fixes import resolve_duplicate_ids
+from src.visualization_utils import draw_tracking_results
+from src.supabase_client import clear_classroom_events, log_event
 from src.runtime_utils import get_acceleration_status
+import supervision as sv
 
 app = FastAPI()
 
@@ -121,6 +126,7 @@ class StreamState:
         self.stop_requested = False
         self.stream_token = 0
         self.active_monitor = None
+        self.frontend_processor = None
         self.active_source_type = None
         self.active_upload_path = None
         self.model_path = CONFIG.detector_model_path
@@ -128,6 +134,7 @@ class StreamState:
         self.behavior_model_path = CONFIG.behavior_model_path
         
         self.active_count = 0
+        self.frontend_last_jpeg = None
         self.log_buffer = deque(maxlen=500)
         self.log_sequence = 0
         self.event_buffer = deque(maxlen=1000)
@@ -259,7 +266,149 @@ class StreamState:
         is_valid = len(missing) == 0
         return is_valid, loaded, missing
 
+
+class FrontendWebcamProcessor:
+    """
+    Processes browser-sent webcam frames through the same core
+    detection/tracking/recognition/behavior flow used by live/upload streams.
+    """
+    def __init__(
+        self,
+        detector,
+        recognizer=None,
+        behavior_classifier=None,
+        detect_interval=1,
+        recheck_interval=1.5,
+        behavior_interval=1.0,
+        processing_width=960,
+        event_callback=None,
+        min_recognition_face_size=0,
+        min_recognition_face_score=0.0,
+    ):
+        self.detector = detector
+        self.recognizer = recognizer
+        self.behavior_classifier = behavior_classifier
+        self.detect_interval = max(1, int(detect_interval))
+        self.processing_width = processing_width
+        self.event_callback = event_callback
+        self.global_frame_index = 0
+        self.last_detections = sv.Detections.empty()
+        self.frame_width = None
+        self.frame_height = None
+
+        self.tracker = sv.ByteTrack(frame_rate=30, track_activation_threshold=0.5, lost_track_buffer=90)
+        self.track_manager = TrackManager(
+            recheck_interval=recheck_interval,
+            behavior_classifier=behavior_classifier,
+            behavior_interval=behavior_interval,
+            min_recognition_face_size=min_recognition_face_size,
+            min_recognition_face_score=min_recognition_face_score,
+        )
+
+    def _ensure_input_size(self, frame):
+        if self.frame_width is not None and self.frame_height is not None:
+            return
+        h, w = frame.shape[:2]
+        if w <= 0 or h <= 0:
+            return
+        aspect_ratio = h / w
+        self.frame_width = int(self.processing_width)
+        self.frame_height = max(1, int(self.frame_width * aspect_ratio))
+        self.detector.set_input_size(self.frame_width, self.frame_height)
+
+    def process_frame(self, frame):
+        if frame is None or frame.size == 0:
+            return 0, None
+
+        self._ensure_input_size(frame)
+        frame = cv.resize(frame, (self.frame_width, self.frame_height))
+        self.global_frame_index += 1
+
+        faces = []
+        if self.global_frame_index % self.detect_interval == 0:
+            faces = self.detector.detect(frame)
+
+        if len(faces) > 0:
+            xywh = faces[:, :4]
+            conf = faces[:, -1]
+            x = xywh[:, 0]
+            y = xywh[:, 1]
+            w = xywh[:, 2]
+            h = xywh[:, 3]
+            xyxy = np.stack([x, y, x + w, y + h], axis=1)
+            detections = sv.Detections(
+                xyxy=xyxy,
+                confidence=conf,
+                class_id=np.zeros(len(faces), dtype=int),
+            )
+        else:
+            detections = sv.Detections.empty()
+
+        if self.global_frame_index % self.detect_interval == 0:
+            detections = self.tracker.update_with_detections(detections)
+            self.last_detections = detections
+        else:
+            detections = self.last_detections
+
+        if self.recognizer or self.behavior_classifier:
+            self.track_manager.process_batch(frame, detections, faces, self.recognizer, profiler=None)
+
+        for i in range(len(detections)):
+            track_id = int(detections.tracker_id[i]) if detections.tracker_id is not None else -1
+            if track_id == -1:
+                continue
+
+            meta = self.track_manager.get_metadata().get(track_id)
+            if not meta:
+                continue
+            current_b = meta.get("behavior", "Neutral")
+            last_logged_b = meta.get("last_logged_behavior")
+            last_logged_t = meta.get("last_logged_time", 0.0)
+            current_time = time.time()
+
+            should_log = current_b != last_logged_b or (current_time - last_logged_t) > 10.0
+            if should_log:
+                log_event(
+                    tracker_id=track_id,
+                    name=meta.get("name", "Unknown"),
+                    behavior=current_b,
+                    confidence=meta.get("behavior_conf", 0.0),
+                )
+                meta["last_logged_behavior"] = current_b
+                meta["last_logged_time"] = current_time
+                if self.event_callback:
+                    self.event_callback(
+                        {
+                            "track_id": track_id,
+                            "name": meta.get("name", "Unknown"),
+                            "behavior": current_b,
+                            "confidence": float(meta.get("behavior_conf", 0.0)),
+                        }
+                    )
+
+        track_metadata = self.track_manager.get_metadata()
+        active_names = resolve_duplicate_ids(detections, track_metadata)
+        annotated = draw_tracking_results(frame.copy(), detections, track_metadata, active_names)
+        return int(len(detections)), annotated
+
 state = StreamState()
+
+
+def _on_detection_event(event):
+    state.add_event(
+        name=event.get("name", "Unknown"),
+        behavior=event.get("behavior", "Neutral"),
+        confidence=event.get("confidence", 0.0),
+        tracker_id=event.get("track_id"),
+    )
+    state.add_log(
+        "Detection updated",
+        "detection",
+        student_id=event.get("name", "Unknown"),
+        tracker_id=event.get("track_id"),
+        behavior=event.get("behavior", "Neutral"),
+        confidence=event.get("confidence", 0.0),
+    )
 
 @app.on_event("startup")
 async def startup_event():
@@ -278,7 +427,7 @@ async def start_stream(
 ):
     """
     Configures the stream source.
-    type: 'live' or 'upload'
+    type: 'live' or 'upload' or 'frontend'
     file: The video file if type is 'upload'
     """
     state.load_models()
@@ -311,6 +460,29 @@ async def start_stream(
             state.active_upload_path = None
         logger.info("Stream configured for live camera")
         state.add_log("Live camera stream configured", "system", source_type="live")
+
+    elif type == "frontend":
+        processor = FrontendWebcamProcessor(
+            detector=state.detector,
+            recognizer=state.recognizer,
+            behavior_classifier=state.behavior_classifier,
+            detect_interval=CONFIG.detect_interval,
+            recheck_interval=CONFIG.recheck_interval,
+            behavior_interval=CONFIG.behavior_interval,
+            processing_width=CONFIG.processing_width,
+            event_callback=_on_detection_event,
+            min_recognition_face_size=CONFIG.min_recognition_face_size,
+            min_recognition_face_score=CONFIG.min_recognition_face_score,
+        )
+        with state.lock:
+            state.source = None
+            state.frontend_processor = processor
+            state.active_source_type = "frontend"
+            state.active_upload_path = None
+            state.is_running = True
+            state.active_count = 0
+        logger.info("Stream configured for browser webcam ingestion")
+        state.add_log("Frontend webcam stream configured", "system", source_type="frontend")
         
     else:
         raise HTTPException(status_code=400, detail="Invalid type")
@@ -331,7 +503,9 @@ async def stop_stream():
         state.stream_token += 1
         state.is_running = False
         state.active_count = 0
+        state.frontend_last_jpeg = None
         active_monitor = state.active_monitor
+        state.frontend_processor = None
         active_upload_path = state.active_upload_path
         source_type = state.active_source_type
         state.active_monitor = None
@@ -361,7 +535,9 @@ async def reset_data():
         state.stream_token += 1
         state.is_running = False
         state.active_count = 0
+        state.frontend_last_jpeg = None
         active_monitor = state.active_monitor
+        state.frontend_processor = None
         active_upload_path = state.active_upload_path
         source_type = state.active_source_type
         state.active_monitor = None
@@ -398,6 +574,35 @@ def generate_frames():
         active_source_type = state.active_source_type
         active_upload_path = state.active_upload_path
 
+    if active_source_type == "frontend":
+        try:
+            state.add_log("Video stream started", "system", source_type=active_source_type)
+            while True:
+                with state.lock:
+                    stop_requested = state.stop_requested
+                    token_changed = stream_token != state.stream_token
+                    frame_bytes = state.frontend_last_jpeg
+                if stop_requested or token_changed:
+                    break
+                if frame_bytes is not None:
+                    yield (
+                        b"--frame\r\n"
+                        b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
+                    )
+                else:
+                    time.sleep(0.03)
+        finally:
+            with state.lock:
+                state.active_count = 0
+                state.is_running = False
+                state.frontend_processor = None
+                state.source = None
+                state.active_source_type = None
+                state.active_upload_path = None
+                state.frontend_last_jpeg = None
+            state.add_log("Video stream stopped", "system")
+        return
+
     if local_source is None:
         logger.warning("No source configured")
         return
@@ -408,22 +613,6 @@ def generate_frames():
     # but for simplicity, new stream = new session.
     
     try:
-        def on_detection_event(event):
-            state.add_event(
-                name=event.get("name", "Unknown"),
-                behavior=event.get("behavior", "Neutral"),
-                confidence=event.get("confidence", 0.0),
-                tracker_id=event.get("track_id"),
-            )
-            state.add_log(
-                "Detection updated",
-                "detection",
-                student_id=event.get("name", "Unknown"),
-                tracker_id=event.get("track_id"),
-                behavior=event.get("behavior", "Neutral"),
-                confidence=event.get("confidence", 0.0),
-            )
-
         monitor = ClassroomMonitorStage2(
             input_source=local_source,
             detector=state.detector,
@@ -435,7 +624,7 @@ def generate_frames():
             save_output=False,
             processing_width=CONFIG.processing_width,
             display=False,
-            event_callback=on_detection_event,
+            event_callback=_on_detection_event,
             min_recognition_face_size=CONFIG.min_recognition_face_size,
             min_recognition_face_score=CONFIG.min_recognition_face_score,
         )
@@ -517,6 +706,42 @@ async def video_feed():
         media_type="multipart/x-mixed-replace; boundary=frame",
         headers=headers
     )
+
+
+@app.post("/frontend_frame")
+async def frontend_frame(file: UploadFile = File(...)):
+    """
+    Accepts a browser webcam frame (JPEG) and runs one backend processing step.
+    Used when /start_stream type=frontend is active.
+    """
+    with state.lock:
+        processor = state.frontend_processor
+        source_type = state.active_source_type
+        is_running = state.is_running
+
+    if source_type != "frontend" or processor is None or not is_running:
+        raise HTTPException(status_code=409, detail="Frontend live mode is not active")
+
+    payload = await file.read()
+    if not payload:
+        raise HTTPException(status_code=400, detail="Empty frame payload")
+
+    np_buf = np.frombuffer(payload, dtype=np.uint8)
+    frame = cv.imdecode(np_buf, cv.IMREAD_COLOR)
+    if frame is None:
+        raise HTTPException(status_code=400, detail="Invalid image payload")
+
+    count, annotated = processor.process_frame(frame)
+    if annotated is not None:
+        ok, buffer = cv.imencode(".jpg", annotated)
+        if ok:
+            with state.lock:
+                state.frontend_last_jpeg = buffer.tobytes()
+    with state.lock:
+        state.active_count = count
+        state.is_running = True
+
+    return {"status": "ok", "active_students": count}
 
 @app.get("/logs/stream")
 async def stream_logs():
