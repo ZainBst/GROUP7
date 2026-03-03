@@ -7,7 +7,7 @@ import supervision as sv
 from src.track_manager import TrackManager
 from src.fixes import resolve_duplicate_ids
 from src.visualization_utils import draw_tracking_results
-from src.supabase_client import log_event
+from src.mongodb_client import log_event
 from src.profiler import Profiler
 
 class ClassroomMonitorStage2:

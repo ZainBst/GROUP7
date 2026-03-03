@@ -8,3 +8,4 @@ pickle5; python_version < '3.8'
 fastapi==0.111.1
 uvicorn==0.30.3
 python-multipart==0.0.9
+pymongo>=4.6.0

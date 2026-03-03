@@ -30,7 +30,7 @@ from src.behavior_classifier import BehaviorClassifier
 from src.track_manager import TrackManager
 from src.fixes import resolve_duplicate_ids
 from src.visualization_utils import draw_tracking_results
-from src.supabase_client import clear_classroom_events, log_event
+from src.mongodb_client import clear_classroom_events, log_event
 from src.runtime_utils import get_acceleration_status
 import supervision as sv
 
@@ -562,7 +562,7 @@ async def reset_data():
         state.log_sequence = 0
         state.event_buffer.clear()
         state.event_sequence = 0
-    return {"status": "ok", "supabase_deleted": deleted}
+    return {"status": "ok", "mongo_deleted": deleted}
 
 def generate_frames():
     """
