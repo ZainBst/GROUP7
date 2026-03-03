@@ -9,7 +9,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
+# ── URI switching: set MONGO_MODE=local or MONGO_MODE=atlas in .env ──
+_mode = os.environ.get("MONGO_MODE", "local").strip().lower()
+if _mode == "atlas":
+    MONGO_URI = os.environ.get("MONGO_URI_ATLAS", "")
+    if not MONGO_URI or "<user>" in MONGO_URI:
+        raise ValueError(
+            "[MongoDB] MONGO_MODE=atlas but MONGO_URI_ATLAS is not set or still has placeholder values in .env"
+        )
+    print("[MongoDB] Mode: Atlas (cloud)")
+else:
+    MONGO_URI = os.environ.get("MONGO_URI_LOCAL", "mongodb://localhost:27017")
+    print("[MongoDB] Mode: Local")
+
 MONGO_DB  = os.environ.get("MONGO_DB",  "behaviornet")
 MONGO_COL = os.environ.get("MONGO_COL", "classroom_events")
 
