@@ -5,6 +5,7 @@ import { Statistics } from "./Statistics";
 import { BehaviorChart } from "./BehaviorChart";
 import { StudentTable } from "./StudentTable";
 import { PositiveNegativeBar } from "./PositiveNegativeBar";
+import { PositiveNegativeLineChart } from "./PositiveNegativeLineChart";
 
 export function Dashboard() {
     return (
@@ -41,6 +42,7 @@ export function Dashboard() {
                         <Statistics />
                         <PositiveNegativeBar />
                         <BehaviorChart />
+                        <PositiveNegativeLineChart />
                     </div>
 
                     <div className="pl-4">
