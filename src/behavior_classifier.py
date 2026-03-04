@@ -1,5 +1,16 @@
 # src/behavior_classifier.py
 import os
+import torch
+from typing import List, Tuple
+
+# ── PyTorch 2.6+ weights_only fix ────────────────────────────────────────────
+# Patch torch.load BEFORE ultralytics imports so YOLO checkpoints load cleanly.
+_orig_torch_load = torch.load
+def _patched_torch_load(*args, **kwargs):
+    kwargs.setdefault("weights_only", False)
+    return _orig_torch_load(*args, **kwargs)
+torch.load = _patched_torch_load
+# ─────────────────────────────────────────────────────────────────────────────
 
 from ultralytics import YOLO
 import numpy as np
@@ -9,6 +20,20 @@ class BehaviorClassifier:
     def __init__(self, model_path: str):
         """Load YOLO11 classification model."""
         import torch
+        import ultralytics.nn.tasks as _ult_tasks
+
+        # PyTorch 2.6+ changed weights_only default to True which blocks
+        # loading Ultralytics YOLO checkpoints. Allowlist the required globals.
+        try:
+            torch.serialization.add_safe_globals([
+                _ult_tasks.ClassificationModel,
+                _ult_tasks.DetectionModel,
+                _ult_tasks.SegmentationModel,
+                _ult_tasks.PoseModel,
+                _ult_tasks.WorldModel,
+            ])
+        except Exception:
+            pass  # Older torch versions don't have this API — safe to ignore.
 
         forced_device = os.getenv("FORCE_TORCH_DEVICE", "").strip().lower()
         if forced_device:
@@ -32,7 +57,7 @@ class BehaviorClassifier:
         print(f"[Behavior] Loaded model: {model_path} on {device}")
         print(f"[Behavior] Classes: {self.model.names}")
 
-    def classify(self, crop: np.ndarray, conf_threshold: float = 0.35) -> tuple[str, float]:
+    def classify(self, crop: np.ndarray, conf_threshold: float = 0.35) -> Tuple[str, float]:
         """
         Classify behavior on an upper-body crop.
         Returns (class_name, confidence) or ("Neutral", 0.0)
@@ -58,7 +83,7 @@ class BehaviorClassifier:
 
         return class_name, confidence
 
-    def classify_batch(self, crops: list[np.ndarray], conf_threshold: float = 0.35) -> list[tuple[str, float]]:
+    def classify_batch(self, crops: List[np.ndarray], conf_threshold: float = 0.35) -> List[Tuple[str, float]]:
         """
         Classify a batch of crops.
         Returns a list of (class_name, confidence) tuples.
