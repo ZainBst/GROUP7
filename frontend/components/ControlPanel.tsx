@@ -193,7 +193,7 @@ export function ControlPanel() {
 
     const resetData = async () => {
         const shouldReset = window.confirm(
-            "This will clear saved behavior events from Supabase and reset logs. Continue?"
+            "This will clear saved behavior events from MongoDB and reset logs. Continue?"
         );
         if (!shouldReset) {
             return;
@@ -211,14 +211,14 @@ export function ControlPanel() {
                 window.dispatchEvent(new Event("frontendLiveStopped"));
             }
             const response = await fetch(backendUrl("/reset_data"), { method: "POST" });
-            const result = (await response.json().catch(() => ({}))) as { supabase_deleted?: boolean };
+            const result = (await response.json().catch(() => ({}))) as { mongodb_deleted?: boolean };
             setMode(null);
             setStatus("idle");
             window.dispatchEvent(new Event("streamStopped"));
             window.dispatchEvent(new Event("eventsReset"));
             window.dispatchEvent(new Event("terminalClear"));
-            if (result.supabase_deleted === false) {
-                window.alert("Reset partially failed: Supabase delete was blocked. Check backend Supabase key/policies.");
+            if (result.mongodb_deleted === false) {
+                window.alert("Reset partially failed: MongoDB delete was blocked. Check backend MONGODB_URI and permissions.");
             }
         } catch (error) {
             console.error("Error resetting data:", error);

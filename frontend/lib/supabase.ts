@@ -1,8 +1,3 @@
-
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-export const supabase =
-  supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null
+// Supabase has been replaced with MongoDB.
+// All data access goes through the FastAPI backend — no direct DB client needed here.
+export const supabase = null;
