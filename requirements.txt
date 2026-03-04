@@ -1,11 +1,11 @@
 opencv-python==4.10.0.84
-numpy==1.24.3
-supervision==0.16.0
-ultralytics>=8.3.0
+numpy==1.26.4  # Pinned < 2.0 to avoid binary incompatibility with insightface/onnxruntime
+supervision==0.22.0
+ultralytics==8.4.18
 insightface==0.7.3
 onnxruntime==1.18.1
+pickle5; python_version < '3.8'
 fastapi==0.111.1
 uvicorn==0.30.3
 python-multipart==0.0.9
 pymongo>=4.6.0
-python-dotenv>=1.0.1
