@@ -46,11 +46,30 @@ class FaceRecognizer:
         if not os.path.exists(self.cache_path):
             print(f"Error: Database cache {self.cache_path} not found. Run src/database_utils.py first.")
             return
-
         try:
             with open(self.cache_path, 'rb') as f:
+                import pickle
                 self.known_faces = pickle.load(f)
-            
+        except Exception as e:
+            print(f"Failed to load cache: {e}")
+            # Numpy version mismatch — delete stale pkl and rebuild automatically.
+            if "numpy" in str(e).lower() or "_core" in str(e).lower():
+                print("Cache was built with a different numpy version. Rebuilding...")
+                try:
+                    os.remove(self.cache_path)
+                    from src.database_utils import build_database
+                    build_database(self.faces_dir, self.cache_path)
+                    with open(self.cache_path, 'rb') as f:
+                        import pickle as _pk
+                        self.known_faces = _pk.load(f)
+                    print("Cache rebuilt successfully.")
+                except Exception as rebuild_err:
+                    print(f"Auto-rebuild failed: {rebuild_err}")
+                    return
+            else:
+                return
+
+        try:
             # Prepare vectorized structures
             if self.known_faces:
                 self.known_names = list(self.known_faces.keys())
@@ -58,10 +77,9 @@ class FaceRecognizer:
                 # Ensure normalized (should be already, but safety first)
                 norms = np.linalg.norm(self.known_embeddings, axis=1, keepdims=True)
                 self.known_embeddings = self.known_embeddings / (norms + 1e-10)
-                
             print(f"Recognizer loaded: {len(self.known_faces)} students.")
         except Exception as e:
-            print(f"Failed to load cache: {e}")
+            print(f"Failed to prepare embeddings: {e}")
 
     def recognize(self, face_img, landmarks=None):
         """

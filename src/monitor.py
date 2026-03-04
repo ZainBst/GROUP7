@@ -38,7 +38,7 @@ class ClassroomMonitorStage2:
         self.profiler = Profiler()
         
         # Supervision Tracker
-        self.tracker = sv.ByteTrack(frame_rate=30, track_activation_threshold=0.5, lost_track_buffer=90)
+        self.tracker = sv.ByteTrack(frame_rate=30, track_thresh=0.5, track_buffer=90)
         
         # NEW: Track Manager
         self.behavior_classifier = behavior_classifier
