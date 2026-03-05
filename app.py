@@ -300,7 +300,15 @@ class FrontendWebcamProcessor:
         self.frame_width = None
         self.frame_height = None
 
-        self.tracker = sv.ByteTrack(frame_rate=30, track_activation_threshold=0.5, lost_track_buffer=90)
+        # P1: version-safe ByteTrack construction
+        try:
+            self.tracker = sv.ByteTrack(
+                frame_rate=30,
+                track_activation_threshold=0.5,
+                lost_track_buffer=90,
+            )
+        except TypeError:
+            self.tracker = sv.ByteTrack()
         self.track_manager = TrackManager(
             recheck_interval=recheck_interval,
             behavior_classifier=behavior_classifier,

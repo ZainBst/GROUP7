@@ -211,14 +211,15 @@ export function ControlPanel() {
                 window.dispatchEvent(new Event("frontendLiveStopped"));
             }
             const response = await fetch(backendUrl("/reset_data"), { method: "POST" });
-            const result = (await response.json().catch(() => ({}))) as { mongodb_deleted?: boolean };
+            const result = (await response.json().catch(() => ({}))) as { mongodb_deleted?: number | boolean };
             setMode(null);
             setStatus("idle");
             window.dispatchEvent(new Event("streamStopped"));
             window.dispatchEvent(new Event("eventsReset"));
             window.dispatchEvent(new Event("terminalClear"));
-            if (result.mongodb_deleted === false) {
-                window.alert("Reset partially failed: MongoDB delete was blocked. Check backend MONGODB_URI and permissions.");
+            // P2b: treat false OR 0 as failure (backend returns int deleted count)
+            if (result.mongodb_deleted === false || result.mongodb_deleted === 0) {
+                window.alert("Reset partially failed: MongoDB delete was blocked or returned 0. Check backend MONGODB_URI and permissions.");
             }
         } catch (error) {
             console.error("Error resetting data:", error);

@@ -31,7 +31,8 @@ MONGO_COL       = os.getenv("MONGO_COL", "classroom_events")
 
 MONGO_URI = MONGO_URI_ATLAS if MONGO_MODE == "atlas" else MONGO_URI_LOCAL
 
-logger.info(f"[MongoDB] mode={MONGO_MODE}  uri={MONGO_URI[:40]}...")
+# P2: log mode only — never log URI to avoid leaking Atlas credentials
+logger.info(f"[MongoDB] mode={MONGO_MODE}")
 
 # ── client ────────────────────────────────────────
 try:
@@ -41,28 +42,53 @@ try:
     _col = _db[MONGO_COL]
     logger.info(f"[MongoDB] Connected  db={MONGO_DB}  col={MONGO_COL}")
 except ConnectionFailure as e:
-    logger.error(f"[MongoDB] Connection failed: {e}")
+    logger.error("[MongoDB] Connection failed — check MONGO_URI / MONGO_MODE in .env")
     _client = None
     _col    = None
 
-# ── async write queue ─────────────────────────────
+# ── batched async write queue (P3: insert_many, P1: pausable) ─────────────
+import time as _time
+
+BATCH_SIZE     = 10
+FLUSH_INTERVAL = 2.0  # seconds
+
 _queue: queue.Queue = queue.Queue()
+_paused = threading.Event()
+_paused.set()  # start unpaused
+
+
+def _flush_batch(batch: list):
+    try:
+        if _col is not None and batch:
+            _col.insert_many(batch, ordered=False)
+    except Exception as e:
+        logger.error(f"[MongoDB] insert_many error ({len(batch)} docs): {e}")
+
 
 def _worker():
+    """Drain queue in batches. Blocks while _paused is cleared (during reset)."""
+    batch = []
+    last_flush = _time.monotonic()
     while True:
-        doc = _queue.get()
-        if doc is None:
-            break
+        _paused.wait()  # blocks here during reset
         try:
-            if _col is not None:
-                _col.insert_one(doc)
-        except Exception as e:
-            logger.error(f"[MongoDB] Insert error: {e}")
-        finally:
+            doc = _queue.get(timeout=0.5)
+            if doc is None:
+                break
+            batch.append(doc)
             _queue.task_done()
+        except queue.Empty:
+            pass
+        now = _time.monotonic()
+        if batch and (len(batch) >= BATCH_SIZE or (now - last_flush) >= FLUSH_INTERVAL):
+            _flush_batch(batch)
+            batch = []
+            last_flush = now
 
-_thread = threading.Thread(target=_worker, daemon=True)
+
+_thread = threading.Thread(target=_worker, daemon=True, name="mongo-writer")
 _thread.start()
+
 
 # ── public API ────────────────────────────────────
 def log_event(name: str, behavior: str, confidence: float,
@@ -81,7 +107,26 @@ def log_event(name: str, behavior: str, confidence: float,
 
 
 def clear_classroom_events() -> int:
+    """P1: pause writer, drain queue, delete all DB docs, then resume writer."""
     if _col is None:
         return 0
-    result = _col.delete_many({})
-    return result.deleted_count
+    _paused.clear()  # pause the background writer
+    try:
+        # drain pre-reset queued events so they don't repopulate after delete
+        drained = 0
+        while True:
+            try:
+                _queue.get_nowait()
+                _queue.task_done()
+                drained += 1
+            except queue.Empty:
+                break
+        if drained:
+            logger.info(f"[MongoDB] Drained {drained} queued events before reset")
+        result = _col.delete_many({})
+        return result.deleted_count
+    except Exception as e:
+        logger.error(f"[MongoDB] clear_classroom_events error: {e}")
+        return 0
+    finally:
+        _paused.set()  # always resume the writer
