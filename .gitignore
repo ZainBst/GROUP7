@@ -29,3 +29,4 @@ runs/
 .gemini/
 antigravity/
 *.yml
+*docs

@@ -112,6 +112,46 @@ def log_event(name: str, behavior: str, confidence: float,
     _queue.put(doc)
 
 
+# ── report history collection ─────────────────────────────────────────────
+MONGO_REPORT_COL = os.getenv("MONGO_REPORT_COL", "classroom_reports")
+_report_col = _client[MONGO_DB][MONGO_REPORT_COL] if _client is not None else None
+
+
+def save_report(report_data: dict) -> str:
+    """Store a report snapshot; returns the inserted _id as string, or '' on failure."""
+    if _report_col is None:
+        return ""
+    try:
+        doc = {"generated_at": datetime.now(timezone.utc), **report_data}
+        result = _report_col.insert_one(doc)
+        return str(result.inserted_id)
+    except Exception as e:
+        logger.error(f"[MongoDB] save_report error: {e}")
+        return ""
+
+
+def get_reports(limit: int = 20) -> list:
+    """Return the most recent saved reports (newest first)."""
+    if _report_col is None:
+        return []
+    try:
+        cursor = (
+            _report_col.find({})
+            .sort("generated_at", -1)
+            .limit(max(1, min(limit, 100)))
+        )
+        results = []
+        for doc in cursor:
+            doc["_id"] = str(doc["_id"])
+            if isinstance(doc.get("generated_at"), datetime):
+                doc["generated_at"] = doc["generated_at"].isoformat()
+            results.append(doc)
+        return results
+    except Exception as e:
+        logger.error(f"[MongoDB] get_reports error: {e}")
+        return []
+
+
 def clear_classroom_events() -> int:
     """P1: pause writer, drain queue, delete all DB docs, then resume writer."""
     if _col is None:

@@ -4,6 +4,7 @@ import { TerminalLogs } from "./TerminalLogs";
 import { Statistics } from "./Statistics";
 import { BehaviorChart } from "./BehaviorChart";
 import { StudentTable } from "./StudentTable";
+import { ReportHistory } from "./ReportHistory";
 import { PositiveNegativeBar } from "./PositiveNegativeBar";
 import { PositiveNegativeLineChart } from "./PositiveNegativeLineChart";
 
@@ -45,8 +46,9 @@ export function Dashboard() {
                         <PositiveNegativeLineChart />
                     </div>
 
-                    <div className="pl-4">
+                    <div className="pl-4 flex flex-col gap-6">
                         <StudentTable />
+                        <ReportHistory />
                     </div>
 
                 </div>
