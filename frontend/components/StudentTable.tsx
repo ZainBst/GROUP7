@@ -123,7 +123,6 @@ async function _buildAndDownloadDoc(
     sessionStart: string | null,
 ): Promise<string> {
     const now = new Date();
-    const totalEvents = students.reduce((s, st) => s + st.totalEvents, 0);
 
     const globalBreakdown: Record<string, number> = {};
     for (const st of students) {
@@ -167,7 +166,7 @@ async function _buildAndDownloadDoc(
         new Paragraph({
             children: [
                 new TextRun({
-                    text: `Total Students: ${students.length}   |   Total Events: ${totalEvents}   |   Most Common Behaviour: ${topBehaviorLabel}`,
+                    text: `Total Students: ${students.length}   |   Most Common Behaviour: ${topBehaviorLabel}`,
                     size: 20,
                 }),
             ],
@@ -325,7 +324,6 @@ export function StudentTable() {
                             <th className="px-4 py-3">Student ID</th>
                             <th className="px-4 py-3">Student Name</th>
                             <th className="px-4 py-3">Latest Behaviour</th>
-                            <th className="px-4 py-3">Events</th>
                             <th className="px-4 py-3">Behaviour Breakdown</th>
                         </tr>
                     </thead>
@@ -333,7 +331,7 @@ export function StudentTable() {
                         {students.length === 0 && (
                             <tr>
                                 <td
-                                    colSpan={5}
+                                    colSpan={4}
                                     className="px-4 py-8 text-center text-foreground/60 font-mono"
                                 >
                                     No student events yet.
@@ -354,7 +352,6 @@ export function StudentTable() {
                                     <td className="px-4 py-3 font-medium text-foreground">
                                         {student.latestBehavior}
                                     </td>
-                                    <td className="px-4 py-3">{student.totalEvents}</td>
                                     <td className="px-4 py-3">
                                         <div className="flex flex-col gap-1">
                                             {sortedBreakdown.map(([behavior, count]) => (

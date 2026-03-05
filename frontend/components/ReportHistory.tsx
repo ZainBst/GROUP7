@@ -83,7 +83,7 @@ async function _redownloadReport(report: ReportRecord) {
         new Paragraph({
             children: [
                 new TextRun({
-                    text: `Total Students: ${report.total_students}   |   Total Events: ${report.total_events}   |   Most Common Behaviour: ${topBehaviorLabel}`,
+                    text: `Total Students: ${report.total_students}   |   Most Common Behaviour: ${topBehaviorLabel}`,
                     size: 20,
                 }),
             ],
