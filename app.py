@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import cv2 as cv
@@ -34,7 +34,7 @@ from src.behavior_classifier import BehaviorClassifier
 from src.track_manager import TrackManager
 from src.fixes import resolve_duplicate_ids
 from src.visualization_utils import draw_tracking_results
-from src.mongo_client import clear_classroom_events, log_event
+from src.mongo_client import clear_classroom_events, log_event, save_report, get_reports
 from src.runtime_utils import get_acceleration_status
 import supervision as sv
 
@@ -849,3 +849,21 @@ async def get_config():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.post("/reports")
+async def create_report(request: Request):
+    """
+    Save a report snapshot to MongoDB history.
+    """
+    payload = await request.json()
+    report_id = save_report(payload)
+    return {"id": report_id}
+
+
+@app.get("/reports")
+async def list_reports(limit: int = 20):
+    """
+    Return the most recent saved reports (newest first).
+    """
+    return {"reports": get_reports(limit)}
