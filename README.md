@@ -17,7 +17,7 @@ A high-performance, real-time AI system for student identification and behaviora
 - **Deep Learning**: YOLOv11 (Ultralytics)
 - **Tracking**: ByteTrack
 - **Language**: Python 3.9+
-- **Database**: Vectorized Pickle-based student repository
+- **Database**: MongoDB event store + Pickle-based face embedding cache
 
 ## 📦 Installation
 
@@ -45,33 +45,22 @@ A high-performance, real-time AI system for student identification and behaviora
 3. **Models**:
    Ensure you have the following models in the root directory:
    - `face_detection_yunet_2023mar_int8.onnx`
-   - `yolo11n-cls.pt`
+  - `best.pt`
 
 ## ⚙️ Setup and Configuration
 
-### 1. Environment Variables (Secret Keys)
-This project uses **Supabase** key for database operations. For security, these keys are **NOT** included in the repo.
+### 1. Environment Variables
+This project uses **MongoDB** for behavior event storage.
 
-**Backend Setup:**
-1.  Copy `.env.example` to `.env`:
-    ```bash
-    cp .env.example .env
-    ```
-2.  Open `.env` and fill in your `SUPABASE_URL` and `SUPABASE_KEY`.
+**Backend Setup (`.env`):**
+- `MONGO_MODE=local` or `atlas`
+- `MONGO_URI_LOCAL=mongodb://localhost:27017`
+- `MONGO_URI_ATLAS=<your_atlas_uri>` (used when `MONGO_MODE=atlas`)
+- `MONGO_DB=behaviornet`
+- `MONGO_COL=classroom_events`
 
-**Frontend Setup:**
-1.  Navigate to `Frontend/`:
-    ```bash
-    cd Frontend
-    ```
-2.  Copy `.env.local.example` to `.env.local`:
-    ```bash
-    cp .env.local.example .env.local
-    ```
-3.  Fill in:
-    - `NEXT_PUBLIC_SUPABASE_URL`
-    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-    - `NEXT_PUBLIC_BACKEND_URL` (for local run: `http://localhost:8000`)
+**Frontend Setup (`frontend/.env.local`):**
+- `NEXT_PUBLIC_BACKEND_URL=http://localhost:8000`
 
 ## 🏃 Usage
 
@@ -82,10 +71,17 @@ python -m src.database_utils
 ```
 This generates `faces/embeddings.pkl`.
 
-### 2. Run the Pipeline
-Run the integrated monitoring pipeline:
+### 2. Run Backend + Frontend
+Run backend (single worker required):
 ```bash
-python pipeline.py --source classroom.mp4 --threshold 0.5
+uvicorn app:app --host 0.0.0.0 --port 8000 --workers 1
+```
+
+Run frontend:
+```bash
+cd frontend
+npm install
+npm run dev
 ```
 
 ## 🌐 Deployment Notes (Render/Railway/EC2)
@@ -121,15 +117,16 @@ python pipeline.py --source classroom.mp4 --threshold 0.5
 
 ## 🏗️ Architecture
 
-- **`pipeline.py`**: Main orchestrator.
+- **`app.py`**: FastAPI entrypoint and stream/API orchestrator.
 - **`src/monitor.py`**: Handles detection, tracking, and behavior logic.
 - **`src/track_manager.py`**: Manages identification state and "best-match" logic.
 - **`src/detector.py`**: Interface for YuNet face detector.
 - **`src/recognizer.py`**: Interface for InsightFace 512D embedding matching.
 - **`src/fixes.py`**: Resolves identity conflicts and duplicate tracks.
+- **`src/mongo_client.py`**: MongoDB event logging and reset support.
 
 ## 📝 Configuration
-You can adjust the following in `pipeline.py` or `src/monitor.py`:
+You can adjust the following in `app.py` (via env vars) and `src/monitor.py`:
 - `recheck_interval`: How often to re-run recognition on a track (Default: 2.0s).
 - `threshold`: Recognition confidence threshold (Default: 0.5).
 - `det_size`: Detection window size for InsightFace.
