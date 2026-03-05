@@ -7,7 +7,7 @@ import supervision as sv
 from src.track_manager import TrackManager
 from src.fixes import resolve_duplicate_ids
 from src.visualization_utils import draw_tracking_results
-from src.supabase_client import log_event
+from src.mongo_client import log_event
 from src.profiler import Profiler
 
 class ClassroomMonitorStage2:
@@ -37,9 +37,16 @@ class ClassroomMonitorStage2:
         # Profiler
         self.profiler = Profiler()
         
-        # Supervision Tracker
-        self.tracker = sv.ByteTrack(frame_rate=30, track_activation_threshold=0.5, lost_track_buffer=90)
-        
+        # Supervision Tracker (P1: version-safe construction)
+        try:
+            self.tracker = sv.ByteTrack(
+                frame_rate=30,
+                track_activation_threshold=0.5,
+                lost_track_buffer=90,
+            )
+        except TypeError:
+            self.tracker = sv.ByteTrack()
+
         # NEW: Track Manager
         self.behavior_classifier = behavior_classifier
         self.behavior_interval = behavior_interval

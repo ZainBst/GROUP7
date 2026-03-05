@@ -25,10 +25,13 @@ type StudentRow = {
 
 export function StudentTable() {
     const events = useRealtimeEvents();
+    const DISABLED_BEHAVIORS: string[] = []; // to disable: ["neutral", "other"]
 
     const students = useMemo<StudentRow[]>(() => {
         const latestByName = new Map<string, StudentRow>();
-        events.forEach((event, index) => {
+        events
+            .filter((e) => !DISABLED_BEHAVIORS.includes(e.behavior?.toLowerCase()))
+            .forEach((event, index) => {
             const syntheticId = `S${String(index + 1).padStart(3, "0")}`;
             latestByName.set(event.name, {
                 id: syntheticId,

@@ -7,11 +7,15 @@ import os
 import sys
 import shutil
 import logging
+import warnings
 import time
 import tempfile
 import threading
 import json
 import asyncio
+
+# Suppress FutureWarning from scikit-image used internally by insightface
+warnings.filterwarnings("ignore", category=FutureWarning, module="skimage")
 from collections import deque
 from datetime import datetime, timezone
 from typing import Optional
@@ -30,7 +34,7 @@ from src.behavior_classifier import BehaviorClassifier
 from src.track_manager import TrackManager
 from src.fixes import resolve_duplicate_ids
 from src.visualization_utils import draw_tracking_results
-from src.supabase_client import clear_classroom_events, log_event
+from src.mongo_client import clear_classroom_events, log_event
 from src.runtime_utils import get_acceleration_status
 import supervision as sv
 
@@ -296,7 +300,15 @@ class FrontendWebcamProcessor:
         self.frame_width = None
         self.frame_height = None
 
-        self.tracker = sv.ByteTrack(frame_rate=30, track_activation_threshold=0.5, lost_track_buffer=90)
+        # P1: version-safe ByteTrack construction
+        try:
+            self.tracker = sv.ByteTrack(
+                frame_rate=30,
+                track_activation_threshold=0.5,
+                lost_track_buffer=90,
+            )
+        except TypeError:
+            self.tracker = sv.ByteTrack()
         self.track_manager = TrackManager(
             recheck_interval=recheck_interval,
             behavior_classifier=behavior_classifier,
@@ -528,7 +540,7 @@ async def stop_stream():
 @app.post("/reset_data")
 async def reset_data():
     """
-    Stop active stream (if any), clear Supabase classroom events, and clear in-memory logs.
+    Stop active stream (if any), clear MongoDB classroom events, and clear in-memory logs.
     """
     with state.lock:
         state.stop_requested = True
@@ -562,7 +574,7 @@ async def reset_data():
         state.log_sequence = 0
         state.event_buffer.clear()
         state.event_sequence = 0
-    return {"status": "ok", "supabase_deleted": deleted}
+    return {"status": "ok", "mongodb_deleted": deleted}
 
 def generate_frames():
     """

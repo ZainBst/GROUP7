@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 const COLORS = ["#6D8196", "#4A4A4A", "#CBCBCB", "#8AA1B5", "#7D7D7D", "#B6B6B6"];
+const DISABLED_BEHAVIORS: string[] = []; // to disable: ["neutral", "other"]
 const BEHAVIOR_CLASSES = [
     "upright",
     "writing",
@@ -36,11 +37,13 @@ export function BehaviorChart() {
             counts[key] += 1;
         });
 
-        return BEHAVIOR_CLASSES.map((name, index) => ({
-            name,
-            value: counts[name],
-            color: COLORS[index],
-        }));
+        return BEHAVIOR_CLASSES
+            .filter((name) => !DISABLED_BEHAVIORS.includes(name))
+            .map((name, index) => ({
+                name,
+                value: counts[name],
+                color: COLORS[index],
+            }));
     }, [events]);
 
     return (
