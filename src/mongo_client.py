@@ -30,6 +30,8 @@ MONGO_DB        = os.getenv("MONGO_DB", "behaviornet")
 MONGO_COL       = os.getenv("MONGO_COL", "classroom_events")
 
 MONGO_URI = MONGO_URI_ATLAS if MONGO_MODE == "atlas" else MONGO_URI_LOCAL
+DISABLED_BEHAVIORS: set[str] = set()  # to disable: {"neutral", "other"}
+#DISABLED_BEHAVIORS: set[str] = set() #Re-enable all when ready:
 
 # P2: log mode only — never log URI to avoid leaking Atlas credentials
 logger.info(f"[MongoDB] mode={MONGO_MODE}")
@@ -94,6 +96,10 @@ _thread.start()
 def log_event(name: str, behavior: str, confidence: float,
               tracker_id: int = -1, camera_id: str = "cam_01"):
     if _col is None:
+        return
+    
+    # skip disabled behaviors
+    if behavior.strip().lower() in DISABLED_BEHAVIORS:
         return
     doc = {
         "tracker_id":   int(tracker_id),
