@@ -1,7 +1,7 @@
 "use client";
 
-import { useRealtimeEvents } from "@/hooks/useRealtimeEvents";
-import { useMemo } from "react";
+import { useRealtimeEvents, type Event } from "@/hooks/useRealtimeEvents";
+import { useEffect, useState } from "react";
 import {
     Document,
     Packer,
@@ -23,29 +23,93 @@ type StudentRow = {
     createdAt: string;
 };
 
-export function StudentTable() {
-    const events = useRealtimeEvents();
-    const DISABLED_BEHAVIORS: string[] = []; // to disable: ["neutral", "other"]
+// ── Module-level accumulated state ─────────────────────────────────────────
+// Stored outside React so rows survive component remounts, HMR, and
+// navigation changes. Only cleared on explicit "eventsReset".
+const DISABLED_BEHAVIORS: string[] = []; // to disable: ["neutral", "other"]
 
-    const students = useMemo<StudentRow[]>(() => {
-        const latestByName = new Map<string, StudentRow>();
-        events
-            .filter((e) => !DISABLED_BEHAVIORS.includes(e.behavior?.toLowerCase()))
-            .forEach((event, index) => {
-            const syntheticId = `S${String(index + 1).padStart(3, "0")}`;
-            latestByName.set(event.name, {
-                id: syntheticId,
+let _rows: Record<string, StudentRow> = {};
+let _stableIds = new Map<string, string>();
+let _nextId = 1;
+let _lastProcessedId = 0;
+const _listeners = new Set<(rows: Record<string, StudentRow>) => void>();
+
+function _emitRows() {
+    for (const fn of _listeners) fn(_rows);
+}
+
+function _ingestEvents(events: Event[]) {
+    const incoming = events.filter(
+        (e) =>
+            e.id > _lastProcessedId &&
+            !DISABLED_BEHAVIORS.includes((e.behavior || "").toLowerCase()),
+    );
+
+    const maxId = events.length > 0 ? Math.max(...events.map((e) => e.id)) : _lastProcessedId;
+    _lastProcessedId = Math.max(_lastProcessedId, maxId);
+
+    if (incoming.length === 0) return;
+
+    let changed = false;
+    for (const event of incoming) {
+        if (!_stableIds.has(event.name)) {
+            _stableIds.set(event.name, `S${String(_nextId).padStart(3, "0")}`);
+            _nextId += 1;
+        }
+        _rows = {
+            ..._rows,
+            [event.name]: {
+                id: _stableIds.get(event.name)!,
                 name: event.name,
                 behavior: event.behavior,
                 confidence: event.confidence,
                 createdAt: event.created_at,
-            });
-        });
+            },
+        };
+        changed = true;
+    }
 
-        return Array.from(latestByName.values()).sort(
-            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
+    if (changed) _emitRows();
+}
+
+function _resetRows() {
+    _rows = {};
+    _stableIds = new Map();
+    _nextId = 1;
+    _lastProcessedId = 0;
+    _emitRows();
+}
+
+// ── React hook ─────────────────────────────────────────────────────────────
+function useAccumulatedStudents(): StudentRow[] {
+    // Lazy initialiser reads module-level rows so re-mounts restore prior data.
+    const [rows, setRows] = useState<Record<string, StudentRow>>(() => _rows);
+
+    useEffect(() => {
+        _listeners.add(setRows);
+        return () => { _listeners.delete(setRows); };
+    }, []);
+
+    // Process incoming events from the shared event stream.
+    const events = useRealtimeEvents();
+    useEffect(() => {
+        _ingestEvents(events);
     }, [events]);
+
+    // Clear when reset button fires.
+    useEffect(() => {
+        const onReset = () => _resetRows();
+        window.addEventListener("eventsReset", onReset);
+        return () => window.removeEventListener("eventsReset", onReset);
+    }, []);
+
+    return Object.values(rows).sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+}
+
+export function StudentTable() {
+    const students = useAccumulatedStudents();
 
     const handleDownloadDoc = async () => {
         const headerLabels = ["Student ID", "Student Name", "Behaviour", "Confidence", "Timestamp"];
