@@ -33,7 +33,11 @@ export function ControlPanel() {
             window.dispatchEvent(new Event("streamStarted"));
         } catch (error) {
             console.error("Error starting live camera:", error);
-            window.alert(error instanceof Error ? error.message : "Failed to start live camera. Ensure backend has camera access.");
+            const msg = error instanceof Error ? error.message : "Failed to start live camera.";
+            const hint = msg.includes("fetch") || msg.includes("Failed to fetch")
+                ? " Check: (1) Backend running? (2) If using another device, set NEXT_PUBLIC_BACKEND_URL in frontend/.env.local to your backend IP, e.g. http://192.168.1.x:8000"
+                : "";
+            window.alert(msg + hint);
         } finally {
             setIsLoading(false);
         }

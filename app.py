@@ -116,6 +116,19 @@ class AppConfig:
             if c.strip()
         ]
         self.strict_behavior_model = _env_bool("STRICT_BEHAVIOR_MODEL", True)
+        # RTSP for IP cameras (e.g. Hikvision). Prefer CAMERA_RTSP_URL; else build from components.
+        self.camera_rtsp_url = os.getenv("CAMERA_RTSP_URL", "").strip() or None
+        if not self.camera_rtsp_url:
+            camera_ip = os.getenv("CAMERA_IP", "").strip()
+            if camera_ip:
+                camera_user = os.getenv("CAMERA_USER", "admin").strip()
+                camera_pass = os.getenv("CAMERA_PASS", "").strip()
+                camera_port = os.getenv("CAMERA_RTSP_PORT", "554").strip() or "554"
+                camera_path = os.getenv("CAMERA_RTSP_PATH", "/Streaming/Channels/101").strip() or "/Streaming/Channels/101"
+                if camera_user and camera_pass:
+                    self.camera_rtsp_url = f"rtsp://{camera_user}:{camera_pass}@{camera_ip}:{camera_port}{camera_path}"
+                else:
+                    self.camera_rtsp_url = f"rtsp://{camera_ip}:{camera_port}{camera_path}"
 
 
 CONFIG = AppConfig()
@@ -466,11 +479,12 @@ async def start_stream(
         state.add_log("Upload stream configured", "system", source_type="upload", filename=safe_name)
         
     elif type == 'live':
+        live_source = CONFIG.camera_rtsp_url if CONFIG.camera_rtsp_url else 0
         with state.lock:
-            state.source = 0  # Camera index 0
+            state.source = live_source
             state.active_source_type = "live"
             state.active_upload_path = None
-        logger.info("Stream configured for live camera")
+        logger.info(f"Stream configured for live camera: {live_source}")
         state.add_log("Live camera stream configured", "system", source_type="live")
 
     elif type == "frontend":

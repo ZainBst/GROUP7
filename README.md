@@ -104,6 +104,8 @@ npm run dev
 
 ### Backend Environment Variables
 
+- `CAMERA_RTSP_URL`: Full RTSP URL for IP cameras. When set, used as-is. Example: `rtsp://admin:password@192.168.1.64:554/Streaming/Channels/101`
+- `CAMERA_IP`, `CAMERA_USER`, `CAMERA_PASS`, `CAMERA_RTSP_PORT`, `CAMERA_RTSP_PATH`: Build RTSP URL from parts when `CAMERA_RTSP_URL` is not set. Defaults: user=admin, port=554, path=/Streaming/Channels/101
 - `UPLOAD_DIR`: directory for uploaded videos (`/tmp/classroom_uploads` recommended in hosting)
 - `CLEANUP_UPLOADS`: remove uploaded files after stream ends (`true`/`false`)
 - `DETECT_INTERVAL`: face detector cadence in frames

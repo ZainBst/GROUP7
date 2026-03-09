@@ -30,3 +30,4 @@ runs/
 antigravity/
 *.yml
 *docs
+*.csv
