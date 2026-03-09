@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, Loader2, RotateCcw, StopCircle, Upload } from "lucide-react";
+import { Camera, Loader2, Monitor, RotateCcw, StopCircle, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 import { backendUrl } from "@/lib/api";
 
@@ -14,6 +14,30 @@ export function ControlPanel() {
     const [isLoading, setIsLoading] = useState(false);
     const [status, setStatus] = useState<"idle" | "streaming">("idle");
     const [mode, setMode] = useState<"frontend" | "backend" | null>(null);
+
+    const startLiveCamera = async () => {
+        setIsLoading(true);
+        try {
+            const formData = new FormData();
+            formData.append("type", "live");
+            const response = await fetch(backendUrl("/start_stream"), {
+                method: "POST",
+                body: formData,
+            });
+            if (!response.ok) {
+                const details = await response.json().catch(() => ({} as { detail?: string }));
+                throw new Error(details.detail || "Failed to start live camera");
+            }
+            setMode("backend");
+            setStatus("streaming");
+            window.dispatchEvent(new Event("streamStarted"));
+        } catch (error) {
+            console.error("Error starting live camera:", error);
+            window.alert(error instanceof Error ? error.message : "Failed to start live camera. Ensure backend has camera access.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     const describeWebcamError = (error: unknown): string => {
         const err = error as { name?: string; message?: string } | undefined;
@@ -36,12 +60,11 @@ export function ControlPanel() {
         return `Unable to access webcam${err?.message ? `: ${err.message}` : "."}`;
     };
 
-    const startUploadStream = async (file?: File) => {
+    const startUploadStream = async (file: File) => {
+        if (!file) return;
         const formData = new FormData();
         formData.append("type", "upload");
-        if (file) {
-            formData.append("file", file);
-        }
+        formData.append("file", file);
 
         setIsLoading(true);
         try {
@@ -263,11 +286,21 @@ export function ControlPanel() {
                         </button>
                         <button
                             disabled={isLoading}
+                            onClick={startLiveCamera}
+                            className="flex items-center gap-2 px-4 py-2 bg-transparent border border-border text-foreground font-bold rounded-md hover:bg-border/30 transition-colors disabled:opacity-50"
+                            title="Camera connected to the server machine"
+                        >
+                            <Monitor className="w-4 h-4" />
+                            Server Camera
+                        </button>
+                        <button
+                            disabled={isLoading}
                             onClick={startRunLive}
                             className="flex items-center gap-2 px-4 py-2 bg-transparent border border-border text-foreground font-bold rounded-md hover:bg-border/30 transition-colors disabled:opacity-50"
+                            title="Your device's webcam via browser"
                         >
                             <Camera className="w-4 h-4" />
-                            Run Live
+                            My Webcam
                         </button>
                         <button
                             disabled={isLoading}
