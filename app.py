@@ -691,8 +691,14 @@ def generate_frames():
             state.source = None
             state.active_source_type = None
             state.active_upload_path = None
-        if 'monitor' in locals() and monitor.cap:
-            monitor.cap.release()
+        if 'monitor' in locals():
+            if monitor.cap:
+                monitor.cap.release()
+            if hasattr(monitor, 'profiler') and monitor.profiler:
+                try:
+                    monitor.profiler.save()
+                except Exception as e:
+                    logger.warning(f"Profiler save failed: {e}")
         if CONFIG.cleanup_uploads and active_source_type == "upload" and active_upload_path and os.path.exists(active_upload_path):
             try:
                 os.remove(active_upload_path)
@@ -796,9 +802,40 @@ async def get_logs(since_id: int = 0):
 @app.get("/events")
 async def get_events(since_id: int = 0):
     """
-    Polling endpoint for behavior events used by dashboard components.
+    Polling fallback endpoint for behavior events.
     """
     return {"events": state.get_events_since(since_id)}
+
+
+@app.get("/events/stream")
+async def stream_events():
+    """
+    Server-Sent Events stream for behavior events (lower latency than polling).
+    """
+    async def event_generator():
+        last_id = 0
+        heartbeat_at = time.monotonic()
+        try:
+            yield "event: connected\ndata: {}\n\n"
+            while True:
+                new_events = state.get_events_since(last_id)
+                for entry in new_events:
+                    last_id = entry["id"]
+                    payload = json.dumps(entry)
+                    yield f"id: {entry['id']}\nevent: event\ndata: {payload}\n\n"
+                if (time.monotonic() - heartbeat_at) >= 10:
+                    heartbeat_at = time.monotonic()
+                    yield "event: heartbeat\ndata: {}\n\n"
+                await asyncio.sleep(0.3)
+        except (asyncio.CancelledError, GeneratorExit):
+            return
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    }
+    return StreamingResponse(event_generator(), media_type="text/event-stream", headers=headers)
 
 @app.get("/stats")
 async def get_stats():
