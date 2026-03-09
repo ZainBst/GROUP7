@@ -6,9 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "lint": "eslint"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -22,10 +20,6 @@
     "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
-    "@testing-library/react": "^16",
-    "@vitejs/plugin-react": "^4",
-    "jsdom": "^25",
-    "vitest": "^2",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
