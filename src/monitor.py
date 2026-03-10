@@ -7,7 +7,7 @@ import supervision as sv
 from src.track_manager import TrackManager
 from src.fixes import resolve_duplicate_ids
 from src.visualization_utils import draw_tracking_results
-from src.mongo_client import log_event
+from src.mongo_client import log_event, add_training_sample
 from src.profiler import Profiler
 
 class ClassroomMonitorStage2:
@@ -187,21 +187,32 @@ class ClassroomMonitorStage2:
                         should_log = True
                         
                     if should_log:
+                        crop_path = meta.get("last_crop_path", "")
+                        event_id = ""
+                        if crop_path:
+                            event_id = add_training_sample(
+                                crop_path=crop_path,
+                                predicted=current_b,
+                                confidence=meta["behavior_conf"],
+                                tracker_id=track_id,
+                                name=meta.get("name", "Unknown"),
+                                source="logged",
+                            )
                         log_event(
-                            tracker_id=track_id, 
-                            name=meta['name'], 
-                            behavior=current_b, 
-                            confidence=meta['behavior_conf']
+                            tracker_id=track_id,
+                            name=meta["name"],
+                            behavior=current_b,
+                            confidence=meta["behavior_conf"],
                         )
-                        # Update state
-                        meta['last_logged_behavior'] = current_b
-                        meta['last_logged_time'] = current_time
+                        meta["last_logged_behavior"] = current_b
+                        meta["last_logged_time"] = current_time
                         if self.event_callback:
                             self.event_callback({
                                 "track_id": track_id,
                                 "name": meta.get("name", "Unknown"),
                                 "behavior": current_b,
                                 "confidence": float(meta.get("behavior_conf", 0.0)),
+                                "event_id": event_id or None,
                             })
         self.profiler.stop('logging_check')
 

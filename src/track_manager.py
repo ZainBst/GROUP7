@@ -2,6 +2,9 @@ import time
 import numpy as np
 from collections import deque
 
+from src.training_data import save_crop, is_uncertain
+from src.mongo_client import add_training_sample, add_pending_review
+
 class TrackManager:
     def __init__(
         self,
@@ -240,13 +243,30 @@ class TrackManager:
             if profiler:
                 profiler.stop('behavior_inference')
             
-            for tid, (beh, conf) in zip(behavior_track_ids, results):
+            for idx, (tid, (beh, conf)) in enumerate(zip(behavior_track_ids, results)):
                 meta = self.track_metadata[tid]
-                
+                crop = behavior_crops[idx] if idx < len(behavior_crops) else None
+
+                # Save crop for logged events (non-Neutral) or uncertain samples
+                crop_path = ""
+                if crop is not None and (beh != "Neutral" or is_uncertain(conf)):
+                    crop_path = save_crop(crop)
+                    meta["last_crop_path"] = crop_path
+
+                # Active learning: uncertain samples go to pending review
+                if crop_path and is_uncertain(conf):
+                    add_pending_review(
+                        crop_path=crop_path,
+                        predicted=beh,
+                        confidence=conf,
+                        tracker_id=tid,
+                        name=meta.get("name", "Unknown"),
+                    )
+
                 # Update logic
-                meta['behavior'] = beh
-                meta['behavior_conf'] = conf
-                meta['behavior_last_check'] = current_time
+                meta["behavior"] = beh
+                meta["behavior_conf"] = conf
+                meta["behavior_last_check"] = current_time
 
     # _match_face Removed (Integrated into process_batch)
 

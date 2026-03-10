@@ -46,7 +46,8 @@ try:
 except ConnectionFailure as e:
     logger.error("[MongoDB] Connection failed — check MONGO_URI / MONGO_MODE in .env")
     _client = None
-    _col    = None
+    _db    = None
+    _col   = None
 
 # ── batched async write queue (P3: insert_many, P1: pausable) ─────────────
 import time as _time
@@ -116,6 +117,12 @@ def log_event(name: str, behavior: str, confidence: float,
 MONGO_REPORT_COL = os.getenv("MONGO_REPORT_COL", "classroom_reports")
 _report_col = _client[MONGO_DB][MONGO_REPORT_COL] if _client is not None else None
 
+# ── self-learning: training samples & pending review ──────────────────────
+MONGO_TRAINING_COL = os.getenv("MONGO_TRAINING_COL", "behavior_training_samples")
+MONGO_PENDING_COL = os.getenv("MONGO_PENDING_COL", "behavior_pending_review")
+_training_col = _db[MONGO_TRAINING_COL] if _db is not None else None
+_pending_col = _db[MONGO_PENDING_COL] if _db is not None else None
+
 
 def save_report(report_data: dict) -> str:
     """Store a report snapshot; returns the inserted _id as string, or '' on failure."""
@@ -149,6 +156,140 @@ def get_reports(limit: int = 20) -> list:
         return results
     except Exception as e:
         logger.error(f"[MongoDB] get_reports error: {e}")
+        return []
+
+
+# ── training samples (for corrections + uncertain) ─────────────────────────
+def add_training_sample(
+    crop_path: str,
+    predicted: str,
+    confidence: float,
+    tracker_id: int = -1,
+    name: str = "Unknown",
+    source: str = "logged",
+) -> str:
+    """
+    Add a sample for potential training. Returns _id as string.
+    source: "logged" (from event) or "uncertainty" (active learning).
+    """
+    if _training_col is None:
+        return ""
+    try:
+        doc = {
+            "crop_path": crop_path,
+            "predicted": predicted,
+            "confidence": round(float(confidence), 4),
+            "tracker_id": int(tracker_id),
+            "name": name,
+            "source": source,
+            "correct_label": None,
+            "labeled_at": None,
+            "used_in_training": False,
+            "created_at": datetime.now(timezone.utc),
+        }
+        result = _training_col.insert_one(doc)
+        return str(result.inserted_id)
+    except Exception as e:
+        logger.error(f"[MongoDB] add_training_sample error: {e}")
+        return ""
+
+
+def add_pending_review(
+    crop_path: str,
+    predicted: str,
+    confidence: float,
+    tracker_id: int = -1,
+    name: str = "Unknown",
+) -> str:
+    """Add uncertain sample for human review. Returns _id as string."""
+    if _pending_col is None:
+        return ""
+    try:
+        doc = {
+            "crop_path": crop_path,
+            "predicted": predicted,
+            "confidence": round(float(confidence), 4),
+            "tracker_id": int(tracker_id),
+            "name": name,
+            "correct_label": None,
+            "created_at": datetime.now(timezone.utc),
+        }
+        result = _pending_col.insert_one(doc)
+        return str(result.inserted_id)
+    except Exception as e:
+        logger.error(f"[MongoDB] add_pending_review error: {e}")
+        return ""
+
+
+def get_pending_review(limit: int = 50) -> list:
+    """Get pending samples for review (oldest first)."""
+    if _pending_col is None:
+        return []
+    try:
+        cursor = _pending_col.find({"correct_label": None}).sort("created_at", 1).limit(max(1, min(limit, 100)))
+        return list(cursor)
+    except Exception as e:
+        logger.error(f"[MongoDB] get_pending_review error: {e}")
+        return []
+
+
+def submit_review(sample_id: str, correct_label: str) -> bool:
+    """Mark pending sample as reviewed, move to training_samples."""
+    if _pending_col is None or _training_col is None:
+        return False
+    try:
+        from bson import ObjectId
+
+        doc = _pending_col.find_one({"_id": ObjectId(sample_id)})
+        if not doc:
+            return False
+        # Move to training_samples
+        training_doc = {
+            "crop_path": doc["crop_path"],
+            "predicted": doc["predicted"],
+            "confidence": doc["confidence"],
+            "tracker_id": doc.get("tracker_id", -1),
+            "name": doc.get("name", "Unknown"),
+            "source": "uncertainty",
+            "correct_label": correct_label.strip(),
+            "labeled_at": datetime.now(timezone.utc),
+            "used_in_training": False,
+            "created_at": doc.get("created_at", datetime.now(timezone.utc)),
+        }
+        _training_col.insert_one(training_doc)
+        _pending_col.delete_one({"_id": ObjectId(sample_id)})
+        return True
+    except Exception as e:
+        logger.error(f"[MongoDB] submit_review error: {e}")
+        return False
+
+
+def correct_event(sample_id: str, correct_label: str) -> bool:
+    """Update training sample with correction (from teacher feedback)."""
+    if _training_col is None:
+        return False
+    try:
+        from bson import ObjectId
+
+        result = _training_col.update_one(
+            {"_id": ObjectId(sample_id)},
+            {"$set": {"correct_label": correct_label.strip(), "labeled_at": datetime.now(timezone.utc)}},
+        )
+        return result.modified_count > 0
+    except Exception as e:
+        logger.error(f"[MongoDB] correct_event error: {e}")
+        return False
+
+
+def get_labeled_samples() -> list:
+    """Get all samples with correct_label set (for training export)."""
+    if _training_col is None:
+        return []
+    try:
+        cursor = _training_col.find({"correct_label": {"$ne": None}})
+        return list(cursor)
+    except Exception as e:
+        logger.error(f"[MongoDB] get_labeled_samples error: {e}")
         return []
 
 
