@@ -91,6 +91,8 @@ class AppConfig:
         self.processing_width = _env_int("PROCESSING_WIDTH", 960)
         self.require_single_worker = _env_bool("REQUIRE_SINGLE_WORKER", True)
         self.max_stream_seconds = _env_int("MAX_STREAM_SECONDS", 0)
+        self.read_retry_count = _env_int("READ_RETRY_COUNT", 10)
+        self.read_retry_interval = _env_float("READ_RETRY_INTERVAL", 0.3)
         self.recognition_threshold = _env_float("RECOGNITION_THRESHOLD", 0.1)
         self.recognition_min_margin = _env_float("RECOGNITION_MIN_MARGIN", 0.01)
         # Disabled by default to preserve pre-automation recognition behavior.
@@ -672,12 +674,23 @@ def generate_frames():
             if CONFIG.max_stream_seconds > 0 and (time.time() - started_at) > CONFIG.max_stream_seconds:
                 logger.info("Stopping stream loop due to MAX_STREAM_SECONDS")
                 break
-            # Read from monitor's cap
+            # Read from monitor's cap (with retry for transient failures)
             ret, frame = monitor.cap.read()
             if not ret:
-                logger.info("Stream ended (EOF or Error)")
-                state.add_log("Stream ended (EOF or source error)", "warning")
-                break
+                for attempt in range(CONFIG.read_retry_count):
+                    time.sleep(CONFIG.read_retry_interval)
+                    ret, frame = monitor.cap.read()
+                    if ret:
+                        break
+                if not ret:
+                    # For file/upload: try looping from start
+                    if active_source_type == "upload" and monitor.cap.isOpened():
+                        monitor.cap.set(cv.CAP_PROP_POS_FRAMES, 0)
+                        ret, frame = monitor.cap.read()
+                    if not ret:
+                        logger.info("Stream ended (EOF or Error)")
+                        state.add_log("Stream ended (EOF or source error)", "warning")
+                        break
                 
             # Process
             processed_frame, count = monitor.process_frame(frame)
