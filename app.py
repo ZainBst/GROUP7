@@ -91,6 +91,8 @@ class AppConfig:
         self.processing_width = _env_int("PROCESSING_WIDTH", 960)
         self.require_single_worker = _env_bool("REQUIRE_SINGLE_WORKER", True)
         self.max_stream_seconds = _env_int("MAX_STREAM_SECONDS", 0)
+        self.read_retry_count = _env_int("READ_RETRY_COUNT", 10)
+        self.read_retry_interval = _env_float("READ_RETRY_INTERVAL", 0.3)
         self.recognition_threshold = _env_float("RECOGNITION_THRESHOLD", 0.1)
         self.recognition_min_margin = _env_float("RECOGNITION_MIN_MARGIN", 0.01)
         # Disabled by default to preserve pre-automation recognition behavior.
@@ -116,6 +118,19 @@ class AppConfig:
             if c.strip()
         ]
         self.strict_behavior_model = _env_bool("STRICT_BEHAVIOR_MODEL", True)
+        # RTSP for IP cameras (e.g. Hikvision). Prefer CAMERA_RTSP_URL; else build from components.
+        self.camera_rtsp_url = os.getenv("CAMERA_RTSP_URL", "").strip() or None
+        if not self.camera_rtsp_url:
+            camera_ip = os.getenv("CAMERA_IP", "").strip()
+            if camera_ip:
+                camera_user = os.getenv("CAMERA_USER", "admin").strip()
+                camera_pass = os.getenv("CAMERA_PASS", "").strip()
+                camera_port = os.getenv("CAMERA_RTSP_PORT", "554").strip() or "554"
+                camera_path = os.getenv("CAMERA_RTSP_PATH", "/Streaming/Channels/101").strip() or "/Streaming/Channels/101"
+                if camera_user and camera_pass:
+                    self.camera_rtsp_url = f"rtsp://{camera_user}:{camera_pass}@{camera_ip}:{camera_port}{camera_path}"
+                else:
+                    self.camera_rtsp_url = f"rtsp://{camera_ip}:{camera_port}{camera_path}"
 
 
 CONFIG = AppConfig()
@@ -466,11 +481,12 @@ async def start_stream(
         state.add_log("Upload stream configured", "system", source_type="upload", filename=safe_name)
         
     elif type == 'live':
+        live_source = CONFIG.camera_rtsp_url if CONFIG.camera_rtsp_url else 0
         with state.lock:
-            state.source = 0  # Camera index 0
+            state.source = live_source
             state.active_source_type = "live"
             state.active_upload_path = None
-        logger.info("Stream configured for live camera")
+        logger.info(f"Stream configured for live camera: {live_source}")
         state.add_log("Live camera stream configured", "system", source_type="live")
 
     elif type == "frontend":
@@ -658,12 +674,39 @@ def generate_frames():
             if CONFIG.max_stream_seconds > 0 and (time.time() - started_at) > CONFIG.max_stream_seconds:
                 logger.info("Stopping stream loop due to MAX_STREAM_SECONDS")
                 break
-            # Read from monitor's cap
+            # Read from monitor's cap (with retry for transient failures)
             ret, frame = monitor.cap.read()
             if not ret:
-                logger.info("Stream ended (EOF or Error)")
-                state.add_log("Stream ended (EOF or source error)", "warning")
-                break
+                for attempt in range(CONFIG.read_retry_count):
+                    time.sleep(CONFIG.read_retry_interval)
+                    ret, frame = monitor.cap.read()
+                    if ret:
+                        break
+                if not ret:
+                    # Try seek-to-start (file) or reopen (any source)
+                    if monitor.cap.isOpened():
+                        monitor.cap.set(cv.CAP_PROP_POS_FRAMES, 0)
+                        ret, frame = monitor.cap.read()
+                    if not ret:
+                        # Reopen capture - works for EOF (file) and connection drops (RTSP/webcam)
+                        time.sleep(1.0)  # Cooldown before reconnect
+                        try:
+                            monitor.cap.release()
+                            reopen_src = local_source
+                            if isinstance(local_source, str) and local_source.startswith("rtsp://"):
+                                reopen_src = local_source + ("&" if "?" in local_source else "?") + "rtsp_transport=tcp"
+                            monitor.cap = cv.VideoCapture(reopen_src, cv.CAP_FFMPEG)
+                            if monitor.cap.isOpened():
+                                ret, frame = monitor.cap.read()
+                                if ret:
+                                    logger.info("Stream reconnected")
+                                    state.add_log("Stream reconnected", "system")
+                        except Exception as e:
+                            logger.warning(f"Reconnect failed: {e}")
+                    if not ret:
+                        logger.info("Stream ended (EOF or Error) source=%s", local_source)
+                        state.add_log("Stream ended (EOF or source error)", "warning", source=str(local_source))
+                        break
                 
             # Process
             processed_frame, count = monitor.process_frame(frame)
@@ -691,8 +734,14 @@ def generate_frames():
             state.source = None
             state.active_source_type = None
             state.active_upload_path = None
-        if 'monitor' in locals() and monitor.cap:
-            monitor.cap.release()
+        if 'monitor' in locals():
+            if monitor.cap:
+                monitor.cap.release()
+            if hasattr(monitor, 'profiler') and monitor.profiler:
+                try:
+                    monitor.profiler.save()
+                except Exception as e:
+                    logger.warning(f"Profiler save failed: {e}")
         if CONFIG.cleanup_uploads and active_source_type == "upload" and active_upload_path and os.path.exists(active_upload_path):
             try:
                 os.remove(active_upload_path)
@@ -796,9 +845,41 @@ async def get_logs(since_id: int = 0):
 @app.get("/events")
 async def get_events(since_id: int = 0):
     """
-    Polling endpoint for behavior events used by dashboard components.
+    Polling fallback endpoint for behavior events.
     """
     return {"events": state.get_events_since(since_id)}
+
+
+@app.get("/events/stream")
+async def stream_events():
+    """
+    Server-Sent Events stream for behavior events (lower latency than polling).
+    """
+    async def event_generator():
+        last_id = 0
+        heartbeat_at = time.monotonic()
+        try:
+            yield "event: connected\ndata: {}\n\n"
+            while True:
+                new_events = state.get_events_since(last_id)
+                for entry in new_events:
+                    last_id = entry["id"]
+                    payload = json.dumps(entry)
+                    yield f"id: {entry['id']}\nevent: event\ndata: {payload}\n\n"
+                if (time.monotonic() - heartbeat_at) >= 10:
+                    heartbeat_at = time.monotonic()
+                    yield "event: heartbeat\ndata: {}\n\n"
+                await asyncio.sleep(0.3)
+        except (asyncio.CancelledError, GeneratorExit):
+            return
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    }
+    return StreamingResponse(event_generator(), media_type="text/event-stream", headers=headers)
+
 
 @app.get("/stats")
 async def get_stats():

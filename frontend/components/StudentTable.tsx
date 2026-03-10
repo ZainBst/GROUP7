@@ -1,7 +1,6 @@
 "use client";
 
-import { useRealtimeEvents, type Event } from "@/hooks/useRealtimeEvents";
-import { useEffect, useState } from "react";
+import { useStudentAggregates } from "@/contexts/StudentAggregatesContext";
 import { saveReport } from "@/lib/api";
 import {
     Document,
@@ -16,110 +15,8 @@ import {
     AlignmentType,
 } from "docx";
 
-// -- Types ------------------------------------------------------------------
-type StudentAggregate = {
-    id: string;             // stable synthetic ID (S001, S002...)
-    name: string;
-    latestBehavior: string;
-    latestConfidence: number;
-    firstSeen: string;
-    lastSeen: string;
-    totalEvents: number;
-    behaviorBreakdown: Record<string, number>; // lowercase behavior -> count
-};
-
-// -- Module-level accumulated state -----------------------------------------
-// Stored outside React so aggregates survive component remounts, HMR, and
-// navigation. Only cleared on explicit "eventsReset".
-const DISABLED_BEHAVIORS: string[] = []; // to disable: ["neutral", "other"]
-
-let _agg: Record<string, StudentAggregate> = {};
-let _stableIds = new Map<string, string>();
-let _nextId = 1;
-let _lastProcessedId = 0;
-let _sessionStart: string | null = null;
-const _listeners = new Set<(agg: Record<string, StudentAggregate>) => void>();
-
-function _emitAgg() {
-    for (const fn of _listeners) fn(_agg);
-}
-
-function _ingestEvents(events: Event[]) {
-    const incoming = events.filter(
-        (e) =>
-            e.id > _lastProcessedId &&
-            !DISABLED_BEHAVIORS.includes((e.behavior || "").toLowerCase()),
-    );
-
-    const maxId =
-        events.length > 0
-            ? Math.max(...events.map((e) => e.id))
-            : _lastProcessedId;
-    _lastProcessedId = Math.max(_lastProcessedId, maxId);
-
-    if (incoming.length === 0) return;
-
-    if (_sessionStart === null) {
-        _sessionStart = incoming[0].created_at;
-    }
-
-    let changed = false;
-    for (const event of incoming) {
-        if (!_stableIds.has(event.name)) {
-            _stableIds.set(event.name, `S${String(_nextId).padStart(3, "0")}`);
-            _nextId += 1;
-        }
-        const behaviorKey = (event.behavior || "unknown").toLowerCase();
-        const existing = _agg[event.name];
-        if (existing) {
-            _agg = {
-                ..._agg,
-                [event.name]: {
-                    ...existing,
-                    latestBehavior: event.behavior,
-                    latestConfidence: event.confidence,
-                    lastSeen: event.created_at,
-                    totalEvents: existing.totalEvents + 1,
-                    behaviorBreakdown: {
-                        ...existing.behaviorBreakdown,
-                        [behaviorKey]:
-                            (existing.behaviorBreakdown[behaviorKey] ?? 0) + 1,
-                    },
-                },
-            };
-        } else {
-            _agg = {
-                ..._agg,
-                [event.name]: {
-                    id: _stableIds.get(event.name)!,
-                    name: event.name,
-                    latestBehavior: event.behavior,
-                    latestConfidence: event.confidence,
-                    firstSeen: event.created_at,
-                    lastSeen: event.created_at,
-                    totalEvents: 1,
-                    behaviorBreakdown: { [behaviorKey]: 1 },
-                },
-            };
-        }
-        changed = true;
-    }
-
-    if (changed) _emitAgg();
-}
-
-function _resetAgg() {
-    _agg = {};
-    _stableIds = new Map();
-    _nextId = 1;
-    _lastProcessedId = 0;
-    _sessionStart = null;
-    _emitAgg();
-}
-
-// -- Report document generation ---------------------------------------------
-async function _buildAndDownloadDoc(
-    students: StudentAggregate[],
+async function buildAndDownloadDoc(
+    students: { id: string; name: string; latestBehavior: string; totalEvents: number; behaviorBreakdown: Record<string, number>; firstSeen: string; lastSeen: string }[],
     sessionStart: string | null,
 ): Promise<string> {
     const now = new Date();
@@ -205,7 +102,6 @@ async function _buildAndDownloadDoc(
         const sortedBreakdown = Object.entries(student.behaviorBreakdown).sort(
             (a, b) => b[1] - a[1],
         );
-        // One Paragraph per behavior line inside the breakdown cell
         const breakdownParagraphs = sortedBreakdown.map(
             ([behavior, count]) =>
                 new Paragraph({
@@ -260,48 +156,18 @@ async function _buildAndDownloadDoc(
     return filename;
 }
 
-// -- React hook -------------------------------------------------------------
-function useAccumulatedStudents(): StudentAggregate[] {
-    // Lazy initialiser reads module-level aggregates so re-mounts restore state.
-    const [agg, setAgg] = useState<Record<string, StudentAggregate>>(() => _agg);
-
-    useEffect(() => {
-        _listeners.add(setAgg);
-        return () => {
-            _listeners.delete(setAgg);
-        };
-    }, []);
-
-    const events = useRealtimeEvents();
-    useEffect(() => {
-        _ingestEvents(events);
-    }, [events]);
-
-    useEffect(() => {
-        const onReset = () => _resetAgg();
-        window.addEventListener("eventsReset", onReset);
-        return () => window.removeEventListener("eventsReset", onReset);
-    }, []);
-
-    return Object.values(agg).sort(
-        (a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime(),
-    );
-}
-
-// -- Component --------------------------------------------------------------
 export function StudentTable() {
-    const students = useAccumulatedStudents();
+    const { students, sessionStart } = useStudentAggregates();
 
     const handleDownloadDoc = async () => {
-        const filename = await _buildAndDownloadDoc(students, _sessionStart);
+        const filename = await buildAndDownloadDoc(students, sessionStart);
 
-        // Persist snapshot to MongoDB report history
         const totalEvents = students.reduce((s, st) => s + st.totalEvents, 0);
         await saveReport({
             filename,
             total_students: students.length,
             total_events: totalEvents,
-            session_start: _sessionStart,
+            session_start: sessionStart,
             students: students.map((s) => ({
                 id: s.id,
                 name: s.name,
