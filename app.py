@@ -683,13 +683,29 @@ def generate_frames():
                     if ret:
                         break
                 if not ret:
-                    # For file/upload: try looping from start
-                    if active_source_type == "upload" and monitor.cap.isOpened():
+                    # Try seek-to-start (file) or reopen (any source)
+                    if monitor.cap.isOpened():
                         monitor.cap.set(cv.CAP_PROP_POS_FRAMES, 0)
                         ret, frame = monitor.cap.read()
                     if not ret:
-                        logger.info("Stream ended (EOF or Error)")
-                        state.add_log("Stream ended (EOF or source error)", "warning")
+                        # Reopen capture - works for EOF (file) and connection drops (RTSP/webcam)
+                        time.sleep(1.0)  # Cooldown before reconnect
+                        try:
+                            monitor.cap.release()
+                            reopen_src = local_source
+                            if isinstance(local_source, str) and local_source.startswith("rtsp://"):
+                                reopen_src = local_source + ("&" if "?" in local_source else "?") + "rtsp_transport=tcp"
+                            monitor.cap = cv.VideoCapture(reopen_src, cv.CAP_FFMPEG)
+                            if monitor.cap.isOpened():
+                                ret, frame = monitor.cap.read()
+                                if ret:
+                                    logger.info("Stream reconnected")
+                                    state.add_log("Stream reconnected", "system")
+                        except Exception as e:
+                            logger.warning(f"Reconnect failed: {e}")
+                    if not ret:
+                        logger.info("Stream ended (EOF or Error) source=%s", local_source)
+                        state.add_log("Stream ended (EOF or source error)", "warning", source=str(local_source))
                         break
                 
             # Process
