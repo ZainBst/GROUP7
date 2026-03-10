@@ -35,7 +35,7 @@ def save_crop(crop: np.ndarray) -> str:
     name = f"{uuid.uuid4().hex}.jpg"
     path = os.path.join(CROPS_DIR, name)
     try:
-        cv2.imwrite(path, crop)
+        cv2.imwrite(path, crop, [cv2.IMWRITE_JPEG_QUALITY, 95])
         return "crops/" + name
     except Exception as e:
         logger.warning(f"Failed to save crop: {e}")

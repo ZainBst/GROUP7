@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { RefreshCw, Check } from "lucide-react";
+import { RefreshCw, Check, X, ZoomIn } from "lucide-react";
 import {
     getPendingSamples,
     submitReview,
@@ -22,6 +22,7 @@ export function FeedbackPanel() {
     const [selectedLabels, setSelectedLabels] = useState<Record<string, string>>({});
     const [submitting, setSubmitting] = useState<string | null>(null);
     const [message, setMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+    const [expandedImage, setExpandedImage] = useState<{ url: string; predicted: string; conf: number } | null>(null);
 
     const fetchPending = async () => {
         setLoading(true);
@@ -143,23 +144,35 @@ export function FeedbackPanel() {
                             No pending samples. Run the stream to collect uncertain predictions.
                         </div>
                     ) : (
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-[320px] overflow-y-auto">
+                        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 max-h-[420px] overflow-y-auto">
                             {pending.map((s) => (
                                 <div
                                     key={s._id}
-                                    className="flex flex-col gap-2 p-2 rounded border border-border/50 bg-border/10"
+                                    className="flex flex-col gap-2 p-3 rounded border border-border/50 bg-border/10"
                                 >
-                                    <div className="aspect-[4/3] bg-ink-dark rounded overflow-hidden relative">
+                                    <div
+                                        className="aspect-[4/3] bg-ink-dark rounded overflow-hidden relative cursor-zoom-in group min-h-[120px]"
+                                        onClick={() =>
+                                            setExpandedImage({
+                                                url: cropImageUrl(s.crop_path),
+                                                predicted: s.predicted,
+                                                conf: s.confidence,
+                                            })
+                                        }
+                                    >
                                         <img
                                             src={cropImageUrl(s.crop_path)}
                                             alt=""
-                                            className="w-full h-full object-cover"
+                                            className="w-full h-full object-contain"
                                             onError={(e) => {
                                                 const el = e.target as HTMLImageElement;
                                                 el.onerror = null;
                                                 el.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='1'%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Ccircle cx='8.5' cy='8.5' r='1.5'/%3E%3Cpath d='M21 15l-5-5L5 21'/%3E%3C/svg%3E";
                                             }}
                                         />
+                                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                            <ZoomIn className="w-8 h-8 text-white drop-shadow-lg" />
+                                        </div>
                                     </div>
                                     <div className="text-xs text-foreground/70">
                                         Predicted: {s.predicted} ({Math.round(s.confidence * 100)}%)
@@ -248,6 +261,34 @@ export function FeedbackPanel() {
                             ))}
                         </div>
                     )}
+                </div>
+            )}
+
+            {expandedImage && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+                    onClick={() => setExpandedImage(null)}
+                >
+                    <div
+                        className="relative max-w-4xl max-h-[90vh] bg-ink-dark rounded-lg overflow-hidden shadow-2xl"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <button
+                            onClick={() => setExpandedImage(null)}
+                            className="absolute top-2 right-2 z-10 p-2 rounded-full bg-black/50 hover:bg-black/70 text-white"
+                            aria-label="Close"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+                        <img
+                            src={expandedImage.url}
+                            alt=""
+                            className="max-w-full max-h-[85vh] w-auto h-auto object-contain"
+                        />
+                        <div className="absolute bottom-0 left-0 right-0 p-3 bg-black/70 text-white text-sm">
+                            Predicted: {expandedImage.predicted} ({Math.round(expandedImage.conf * 100)}%)
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
