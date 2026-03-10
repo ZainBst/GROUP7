@@ -5,10 +5,12 @@ import { backendUrl } from "@/lib/api";
 
 export interface Event {
     id: number;
+    event_id?: string | null;
     created_at: string;
     name: string;
     behavior: string;
     confidence: number;
+    tracker_id?: number;
 }
 
 const listeners = new Set<(events: Event[]) => void>();

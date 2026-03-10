@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException, Body
+from fastapi.responses import FileResponse
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import cv2 as cv
@@ -951,6 +952,18 @@ async def feedback_correct(body: dict = Body(...)):
     if not ok:
         raise HTTPException(status_code=404, detail="Event not found or already corrected")
     return {"status": "ok", "event_id": event_id}
+
+
+@app.get("/feedback/crop")
+async def feedback_crop(path: str):
+    """Serve crop image for preview. path: relative path e.g. crops/abc.jpg"""
+    if not path or ".." in path or path.startswith("/"):
+        raise HTTPException(status_code=400, detail="Invalid path")
+    from src.training_data import get_crop_path
+    abs_path = get_crop_path(path)
+    if not os.path.exists(abs_path):
+        raise HTTPException(status_code=404, detail="Crop not found")
+    return FileResponse(abs_path, media_type="image/jpeg")
 
 
 @app.get("/feedback/pending")
