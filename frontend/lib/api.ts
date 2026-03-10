@@ -34,7 +34,8 @@ export async function getReports(): Promise<unknown[]> {
 // ── Self-learning feedback ─────────────────────────────────────────────────
 export function cropImageUrl(cropPath: string): string {
   if (!cropPath) return "";
-  return backendUrl(`/feedback/crop?path=${encodeURIComponent(cropPath)}`);
+  // Use Next.js API proxy for same-origin image loading (avoids CORS)
+  return `/api/crop?path=${encodeURIComponent(cropPath)}`;
 }
 
 export async function getPendingSamples(): Promise<{ _id: string; crop_path: string; predicted: string; confidence: number }[]> {

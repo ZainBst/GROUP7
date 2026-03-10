@@ -959,6 +959,7 @@ async def feedback_crop(path: str):
     """Serve crop image for preview. path: relative path e.g. crops/abc.jpg"""
     if not path or ".." in path or path.startswith("/"):
         raise HTTPException(status_code=400, detail="Invalid path")
+    path = path.replace("\\", "/")
     from src.training_data import get_crop_path
     abs_path = get_crop_path(path)
     if not os.path.exists(abs_path):

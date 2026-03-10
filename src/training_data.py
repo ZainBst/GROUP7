@@ -18,7 +18,8 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 # ── config ─────────────────────────────────────────────────────────────────
-TRAINING_DIR = os.getenv("TRAINING_DATA_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "training_data"))
+_base = os.getenv("TRAINING_DATA_DIR") or os.path.join(os.path.dirname(os.path.dirname(__file__)), "training_data")
+TRAINING_DIR = os.path.abspath(_base)
 CROPS_DIR = os.path.join(TRAINING_DIR, "crops")
 os.makedirs(CROPS_DIR, exist_ok=True)
 
@@ -28,24 +29,25 @@ UNCERTAINTY_CONF_MAX = float(os.getenv("UNCERTAINTY_CONF_MAX", "0.50"))
 
 
 def save_crop(crop: np.ndarray) -> str:
-    """Save crop to disk, return relative path (e.g. crops/abc123.jpg)."""
+    """Save crop to disk, return relative path (e.g. crops/abc123.jpg). Always use forward slashes for cross-platform."""
     if crop is None or crop.size == 0:
         return ""
     name = f"{uuid.uuid4().hex}.jpg"
     path = os.path.join(CROPS_DIR, name)
     try:
         cv2.imwrite(path, crop)
-        return os.path.join("crops", name)
+        return "crops/" + name
     except Exception as e:
         logger.warning(f"Failed to save crop: {e}")
         return ""
 
 
 def get_crop_path(rel_path: str) -> str:
-    """Resolve relative path to absolute."""
+    """Resolve relative path to absolute. Normalizes backslashes to forward slashes."""
     if not rel_path:
         return ""
-    return os.path.join(TRAINING_DIR, rel_path)
+    rel_path = rel_path.replace("\\", "/")
+    return os.path.abspath(os.path.join(TRAINING_DIR, rel_path))
 
 
 def is_uncertain(confidence: float) -> bool:
