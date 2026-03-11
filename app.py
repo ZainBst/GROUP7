@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException, Body
+from fastapi.responses import FileResponse
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import cv2 as cv
@@ -34,7 +35,17 @@ from src.behavior_classifier import BehaviorClassifier
 from src.track_manager import TrackManager
 from src.fixes import resolve_duplicate_ids
 from src.visualization_utils import draw_tracking_results
-from src.mongo_client import clear_classroom_events, log_event, save_report, get_reports
+from src.mongo_client import (
+    clear_classroom_events,
+    log_event,
+    save_report,
+    get_reports,
+    add_training_sample,
+    get_pending_review,
+    submit_review,
+    correct_event,
+    get_labeled_samples,
+)
 from src.runtime_utils import get_acceleration_status
 import supervision as sv
 
@@ -183,11 +194,19 @@ class StreamState:
         with self.lock:
             return [entry for entry in self.log_buffer if entry["id"] > last_id]
 
-    def add_event(self, name: str, behavior: str, confidence: float, tracker_id: Optional[int] = None):
+    def add_event(
+        self,
+        name: str,
+        behavior: str,
+        confidence: float,
+        tracker_id: Optional[int] = None,
+        event_id: Optional[str] = None,
+    ):
         with self.lock:
             self.event_sequence += 1
             event = {
                 "id": self.event_sequence,
+                "event_id": event_id,
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "name": name,
                 "behavior": behavior,
@@ -284,6 +303,33 @@ class StreamState:
         missing = sorted(expected - loaded_norm)
         is_valid = len(missing) == 0
         return is_valid, loaded, missing
+
+    def reload_behavior_model(self, model_path: Optional[str] = None):
+        """Hot-swap behavior classifier with a new model. Uses CONFIG path if model_path not given."""
+        path = model_path or self.behavior_model_path
+        if not os.path.exists(path):
+            self.add_log("Behavior model reload failed: file not found", "error", path=path)
+            return False
+        try:
+            candidate = BehaviorClassifier(path)
+            valid, loaded, missing = self._validate_behavior_model(candidate)
+            if valid or not CONFIG.strict_behavior_model:
+                with self.lock:
+                    self.behavior_classifier = candidate
+                    self.behavior_model_valid = valid
+                    self.behavior_model_classes = loaded
+                    # Update active monitor/frontend processor if running
+                    if self.active_monitor and hasattr(self.active_monitor, "track_manager"):
+                        self.active_monitor.track_manager.behavior_classifier = candidate
+                    if self.frontend_processor and hasattr(self.frontend_processor, "track_manager"):
+                        self.frontend_processor.track_manager.behavior_classifier = candidate
+                self.add_log("Behavior classifier reloaded", "system", path=path)
+                return True
+            self.add_log("Behavior model rejected: incompatible classes", "error", missing=missing)
+            return False
+        except Exception as e:
+            self.add_log("Behavior model reload failed", "error", error=str(e))
+            return False
 
 
 class FrontendWebcamProcessor:
@@ -395,6 +441,17 @@ class FrontendWebcamProcessor:
 
             should_log = current_b != last_logged_b or (current_time - last_logged_t) > 10.0
             if should_log:
+                crop_path = meta.get("last_crop_path", "")
+                event_id = ""
+                if crop_path:
+                    event_id = add_training_sample(
+                        crop_path=crop_path,
+                        predicted=current_b,
+                        confidence=meta.get("behavior_conf", 0.0),
+                        tracker_id=track_id,
+                        name=meta.get("name", "Unknown"),
+                        source="logged",
+                    )
                 log_event(
                     tracker_id=track_id,
                     name=meta.get("name", "Unknown"),
@@ -410,6 +467,7 @@ class FrontendWebcamProcessor:
                             "name": meta.get("name", "Unknown"),
                             "behavior": current_b,
                             "confidence": float(meta.get("behavior_conf", 0.0)),
+                            "event_id": event_id or None,
                         }
                     )
 
@@ -427,6 +485,7 @@ def _on_detection_event(event):
         behavior=event.get("behavior", "Neutral"),
         confidence=event.get("confidence", 0.0),
         tracker_id=event.get("track_id"),
+        event_id=event.get("event_id"),
     )
     state.add_log(
         "Detection updated",
@@ -879,6 +938,84 @@ async def stream_events():
         "X-Accel-Buffering": "no",
     }
     return StreamingResponse(event_generator(), media_type="text/event-stream", headers=headers)
+
+
+# ── Self-learning feedback API ───────────────────────────────────────────
+@app.post("/feedback/correct")
+async def feedback_correct(body: dict = Body(...)):
+    """Teacher correction: update training sample with correct behavior label. Body: {event_id, correct_label}"""
+    event_id = body.get("event_id", "")
+    correct_label = (body.get("correct_label") or "").strip()
+    if not event_id or not correct_label:
+        raise HTTPException(status_code=400, detail="event_id and correct_label required")
+    ok = correct_event(event_id, correct_label)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Event not found or already corrected")
+    return {"status": "ok", "event_id": event_id}
+
+
+@app.get("/feedback/crop")
+async def feedback_crop(path: str):
+    """Serve crop image for preview. path: relative path e.g. crops/abc.jpg"""
+    if not path or ".." in path or path.startswith("/"):
+        raise HTTPException(status_code=400, detail="Invalid path")
+    path = path.replace("\\", "/")
+    from src.training_data import get_crop_path
+    abs_path = get_crop_path(path)
+    if not os.path.exists(abs_path):
+        raise HTTPException(status_code=404, detail="Crop not found")
+    return FileResponse(abs_path, media_type="image/jpeg")
+
+
+@app.get("/feedback/pending")
+async def feedback_pending(limit: int = 50):
+    """Get uncertain samples pending human review (active learning)."""
+    samples = get_pending_review(limit=limit)
+    out = []
+    for s in samples:
+        s["_id"] = str(s["_id"])
+        if isinstance(s.get("created_at"), datetime):
+            s["created_at"] = s["created_at"].isoformat()
+        out.append(s)
+    return {"samples": out}
+
+
+@app.post("/feedback/review")
+async def feedback_review(body: dict = Body(...)):
+    """Submit review for uncertain sample; moves to training set. Body: {sample_id, correct_label}"""
+    sample_id = body.get("sample_id", "")
+    correct_label = (body.get("correct_label") or "").strip()
+    if not sample_id or not correct_label:
+        raise HTTPException(status_code=400, detail="sample_id and correct_label required")
+    ok = submit_review(sample_id, correct_label)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Sample not found")
+    return {"status": "ok", "sample_id": sample_id}
+
+
+@app.get("/feedback/labeled")
+async def feedback_labeled():
+    """Get count of labeled samples (for training)."""
+    samples = get_labeled_samples()
+    out = []
+    for s in samples[:20]:
+        d = dict(s)
+        d["_id"] = str(d.get("_id", ""))
+        for k in ("created_at", "labeled_at"):
+            if isinstance(d.get(k), datetime):
+                d[k] = d[k].isoformat()
+        out.append(d)
+    return {"count": len(samples), "samples": out}
+
+
+@app.post("/models/reload-behavior")
+async def reload_behavior_model(body: dict = Body(default_factory=dict)):
+    """Hot-swap behavior classifier. Body: {model_path?: string} to use a different path."""
+    path = (body or {}).get("model_path") if body else None
+    ok = state.reload_behavior_model(path)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Reload failed (check logs)")
+    return {"status": "ok", "message": "Behavior model reloaded"}
 
 
 @app.get("/stats")
