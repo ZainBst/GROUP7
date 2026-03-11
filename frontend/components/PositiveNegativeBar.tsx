@@ -12,9 +12,9 @@ export function PositiveNegativeBar() {
 
         events.forEach((event) => {
             const behavior = (event.behavior || "").trim().toLowerCase().replace(/_/g, " ");
-            if (behavior === "upright" || behavior === "writing") {
+            if (behavior === "upright" || behavior === "write" || behavior === "hand") {
                 positive += 1;
-            } else if (behavior === "head down" || behavior === "turning around") {
+            } else {
                 negative += 1;
             }
         });

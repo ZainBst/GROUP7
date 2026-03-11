@@ -17,13 +17,11 @@ export function PositiveNegativeLineChart() {
             const behavior = (event.behavior || "").trim().toLowerCase().replace(/_/g, " ");
             let isPositive = false;
             let isNegative = false;
-            if (behavior === "upright" || behavior === "writing") {
+            if (behavior === "upright" || behavior === "write" || behavior === "hand") {
                 isPositive = true;
-            } else if (behavior === "head down" || behavior === "turning around") {
+            } else {
                 isNegative = true;
             }
-
-            if (!isPositive && !isNegative) return; // skip neutral/others
 
             const date = new Date(event.created_at);
             const seconds = date.getSeconds();

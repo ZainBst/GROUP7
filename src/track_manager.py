@@ -123,7 +123,7 @@ class TrackManager:
             if track_id not in self.track_metadata:
                 self.track_metadata[track_id] = {
                     'name': 'Unknown', 'conf': 0.0, 'last_check_time': 0.0,
-                    'behavior': 'Neutral', 'behavior_conf': 0.0,
+                    'behavior': 'negative', 'behavior_conf': 0.0,
                     'behavior_last_check': 0.0,
                     'next_behavior_check': current_time,
                     'id_history': deque(maxlen=self.id_history_size),

@@ -10,7 +10,7 @@ import {
 } from "@/lib/api";
 import { useRealtimeEvents } from "@/hooks/useRealtimeEvents";
 
-const BEHAVIOR_LABELS = ["upright", "writing", "head down", "turning around", "other", "neutral"];
+const BEHAVIOR_LABELS = ["down", "hand", "phone", "turn", "upright", "write"];
 
 type PendingSample = { _id: string; crop_path: string; predicted: string; confidence: number };
 

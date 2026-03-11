@@ -41,7 +41,7 @@ export function LandingPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     <FeatureCard icon={Users} title="Live Student Tracking" desc="Detects and tracks every visible student with stable IDs." />
                     <FeatureCard icon={Shield} title="Face Identification" desc="Matches detected students against your enrolled face database." />
-                    <FeatureCard icon={BrainCircuit} title="Behavior Intelligence" desc="Classifies behaviors like writing, upright, head down, and turning around." />
+                    <FeatureCard icon={BrainCircuit} title="Behavior Intelligence" desc="Classifies behaviors like upright, writing, head down, turning, phone use, and hand raise." />
                     <FeatureCard icon={Activity} title="Realtime Dashboard" desc="View active students, alerts, logs, and behavior trends instantly." />
                     <FeatureCard icon={Video} title="Session Controls" desc="Start, stop, and switch between live camera and uploaded video." />
                     <FeatureCard icon={ShieldCheck} title="Deployment Ready" desc="Configurable for local setup and cloud-hosted environments." />

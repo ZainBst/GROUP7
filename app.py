@@ -117,11 +117,11 @@ class AppConfig:
         self.faces_dir = os.getenv("FACES_DIR", os.path.join(self.base_dir, "faces"))
         self.behavior_model_path = os.getenv(
             "BEHAVIOR_MODEL_PATH",
-            os.path.join(self.base_dir, "best.pt")
+            os.path.join(self.base_dir, "Models", "best.pt")
         )
         raw_behavior_classes = os.getenv(
             "BEHAVIOR_EXPECTED_CLASSES",
-            "upright,writing,head down,turning around,other"
+            "down,hand,phone,turn,upright,write"
         )
         self.behavior_expected_classes = [
             c.strip().lower().replace("_", " ")

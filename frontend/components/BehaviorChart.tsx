@@ -5,14 +5,15 @@ import { useMemo } from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 const COLORS = ["#6D8196", "#4A4A4A", "#CBCBCB", "#8AA1B5", "#7D7D7D", "#B6B6B6"];
-const DISABLED_BEHAVIORS: string[] = []; // to disable: ["neutral", "other"]
+const DISABLED_BEHAVIORS: string[] = [];
 const BEHAVIOR_CLASSES = [
+    "down",
+    "hand",
+    "phone",
+    "turn",
     "upright",
-    "writing",
-    "head down",
-    "turning around",
-    "neutral",
-    "other",
+    "write",
+    "negative",
 ] as const;
 
 export function BehaviorChart() {
@@ -20,30 +21,33 @@ export function BehaviorChart() {
 
     const data = useMemo(() => {
         const counts: Record<(typeof BEHAVIOR_CLASSES)[number], number> = {
+            down: 0,
+            hand: 0,
+            phone: 0,
+            turn: 0,
             upright: 0,
-            writing: 0,
-            "head down": 0,
-            "turning around": 0,
-            neutral: 0,
-            other: 0,
+            write: 0,
+            negative: 0,
         };
 
         events.forEach((event) => {
             const raw = (event.behavior || "").trim().toLowerCase();
-            const normalized = raw === "neutral" ? "neutral" : raw;
-            const key = BEHAVIOR_CLASSES.includes(normalized as (typeof BEHAVIOR_CLASSES)[number])
-                ? (normalized as (typeof BEHAVIOR_CLASSES)[number])
-                : "other";
-            counts[key] += 1;
+            if (BEHAVIOR_CLASSES.includes(raw as (typeof BEHAVIOR_CLASSES)[number])) {
+                counts[raw as (typeof BEHAVIOR_CLASSES)[number]] += 1;
+            } else {
+                counts.negative += 1;
+            }
         });
 
-        return BEHAVIOR_CLASSES
+        const result: { name: string; value: number; color: string }[] = BEHAVIOR_CLASSES
             .filter((name) => !DISABLED_BEHAVIORS.includes(name))
             .map((name, index) => ({
                 name,
                 value: counts[name],
-                color: COLORS[index],
+                color: name === "negative" ? "#5A5A5A" : COLORS[index],
             }));
+
+        return result.filter((item) => item.name !== "negative" || item.value > 0);
     }, [events]);
 
     return (

@@ -22,12 +22,14 @@ class BehaviorClassifier:
 
         self.model = YOLO(model_path)
         self.model.to(device)
+        # Thresholds aligned with current behavior classes.
         self.thresholds = {
-            "head down": 0.40,
-            "turning around": 0.40,
-            "writing": 0.40,
-            "upright": 0.32,
-            "other": 0.60,
+            "down": 0.90,
+            "hand": 0.70,
+            "phone": 0.70,
+            "turn": 0.70,
+            "upright": 0.80,
+            "write": 0.80,
         }
         print(f"[Behavior] Loaded model: {model_path} on {device}")
         print(f"[Behavior] Classes: {self.model.names}")
@@ -35,15 +37,15 @@ class BehaviorClassifier:
     def classify(self, crop: np.ndarray, conf_threshold: float = 0.35) -> tuple[str, float]:
         """
         Classify behavior on an upper-body crop.
-        Returns (class_name, confidence) or ("Neutral", 0.0)
+        Returns (class_name, confidence) or ("negative", 0.0)
         """
         if crop.size == 0 or crop.shape[0] < 20 or crop.shape[1] < 20:
-            return "Invalid crop", 0.0
+            return "negative", 0.0
 
         results = self.model.predict(crop, verbose=False)
 
         if not results or len(results[0].probs.data) == 0:
-            return "Neutral", 0.0
+            return "negative", 0.0
 
         top_idx = results[0].probs.top1
         confidence = float(results[0].probs.top1conf)
@@ -54,7 +56,7 @@ class BehaviorClassifier:
         required_conf = self.thresholds.get(class_name_norm, conf_threshold)
 
         if confidence < required_conf:
-            return "Neutral", confidence
+            return "negative", confidence
 
         return class_name, confidence
 
@@ -73,7 +75,7 @@ class BehaviorClassifier:
 
         for r in results:
             if not r or len(r.probs.data) == 0:
-                batch_output.append(("Neutral", 0.0))
+                batch_output.append(("negative", 0.0))
                 continue
 
             top_idx = r.probs.top1
@@ -84,7 +86,7 @@ class BehaviorClassifier:
             required_conf = self.thresholds.get(class_name_norm, conf_threshold)
 
             if confidence < required_conf:
-                batch_output.append(("Neutral", confidence))
+                batch_output.append(("negative", confidence))
             else:
                 batch_output.append((class_name, confidence))
 
