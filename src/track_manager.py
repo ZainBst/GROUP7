@@ -219,9 +219,9 @@ class TrackManager:
 
                 w_box = bx2 - bx1
                 h_box = by2 - by1
-                expand_h_down = 3.0
-                expand_w = 1.8
-                margin_up = 0.4
+                expand_h_down = 2.0
+                expand_w = 1.6
+                margin_up = 0.2
 
                 x1_new = max(0, int(bx1 - w_box * (expand_w - 1) / 2))
                 x2_new = min(frame.shape[1], int(bx2 + w_box * (expand_w - 1) / 2))
@@ -232,6 +232,8 @@ class TrackManager:
                 if crop.shape[0] >= 20 and crop.shape[1] >= 20:
                     behavior_crops.append(crop)
                     behavior_track_ids.append(track_id)
+                    # Store last behavior crop box for visualization alignment.
+                    meta["last_behavior_box"] = (x1_new, y1_new, x2_new, y2_new)
 
                 meta['next_behavior_check'] = current_time + self.behavior_interval
 

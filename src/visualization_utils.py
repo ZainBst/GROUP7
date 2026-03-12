@@ -21,8 +21,15 @@ def draw_tracking_results(frame, detections, track_metadata, active_names):
             if winner_id != track_id:
                 name = "Unknown" # Suppress duplicate for display
         
-        # --- Expanded BBox Logic ---
-        new_x, new_y, new_w, new_h = get_expanded_bbox(x1, y1, x2, y2, w_frame, h_frame)
+        # Prefer behavior crop box (if available) so visuals match behavior ROI.
+        behavior_box = track_metadata.get(track_id, {}).get("last_behavior_box")
+        if behavior_box:
+            bx1, by1, bx2, by2 = map(int, behavior_box)
+            new_x, new_y = bx1, by1
+            new_w, new_h = max(1, bx2 - bx1), max(1, by2 - by1)
+        else:
+            # Fallback: expanded bbox around face/track.
+            new_x, new_y, new_w, new_h = get_expanded_bbox(x1, y1, x2, y2, w_frame, h_frame)
 
         # Draw
         color = (0, 255, 0) if name != "Unknown" else (0, 0, 255) # Green for known, Red for Unknown
