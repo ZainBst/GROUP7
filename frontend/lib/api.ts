@@ -1,4 +1,6 @@
 const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+export const selfLearningEnabled =
+  (process.env.NEXT_PUBLIC_ENABLE_SELF_LEARNING || "false").trim().toLowerCase() === "true";
 
 export function backendUrl(path: string): string {
   const normalized = path.startsWith("/") ? path : `/${path}`;
@@ -33,12 +35,13 @@ export async function getReports(): Promise<unknown[]> {
 
 // ── Self-learning feedback ─────────────────────────────────────────────────
 export function cropImageUrl(cropPath: string): string {
-  if (!cropPath) return "";
+  if (!cropPath || !selfLearningEnabled) return "";
   // Use Next.js API proxy for same-origin image loading (avoids CORS)
   return `/api/crop?path=${encodeURIComponent(cropPath)}`;
 }
 
 export async function getPendingSamples(): Promise<{ _id: string; crop_path: string; predicted: string; confidence: number }[]> {
+  if (!selfLearningEnabled) return [];
   try {
     const res = await fetch(backendUrl("/feedback/pending?limit=50"));
     if (!res.ok) return [];
@@ -74,4 +77,3 @@ export async function submitCorrection(eventId: string, correctLabel: string): P
     return false;
   }
 }
-

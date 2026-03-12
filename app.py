@@ -91,6 +91,10 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+def _self_learning_enabled() -> bool:
+    return os.getenv("ENABLE_SELF_LEARNING", "false").strip().lower() in {"1", "true", "yes", "on"}
+
+
 class AppConfig:
     def __init__(self):
         self.base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -443,7 +447,7 @@ class FrontendWebcamProcessor:
             if should_log:
                 crop_path = meta.get("last_crop_path", "")
                 event_id = ""
-                if crop_path:
+                if crop_path and _self_learning_enabled():
                     event_id = add_training_sample(
                         crop_path=crop_path,
                         predicted=current_b,

@@ -2,7 +2,7 @@ import cv2 as cv
 import os
 
 class YunetFaceDetector:
-    def __init__(self, model_path, conf_threshold=0.6, nms_threshold=0.3):
+    def __init__(self, model_path, conf_threshold=0.7, nms_threshold=0.3):
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Face detection model not found at: {model_path}")
             

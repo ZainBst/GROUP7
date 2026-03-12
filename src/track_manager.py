@@ -1,4 +1,5 @@
 import time
+import os
 import numpy as np
 from collections import deque
 
@@ -27,6 +28,9 @@ class TrackManager:
         self.min_id_hits = min_id_hits
         self.min_recognition_face_size = min_recognition_face_size
         self.min_recognition_face_score = min_recognition_face_score
+        self.enable_self_learning = os.getenv("ENABLE_SELF_LEARNING", "false").strip().lower() in {
+            "1", "true", "yes", "on"
+        }
         
         # Metadata storage: {track_id: {'name': 'Unknown', 'conf': 0.0, 'last_check_time': 0.0, ...}}
         self.track_metadata = {}
@@ -219,14 +223,26 @@ class TrackManager:
 
                 w_box = bx2 - bx1
                 h_box = by2 - by1
-                expand_h_down = 2.0
-                expand_w = 1.6
-                margin_up = 0.2
 
-                x1_new = max(0, int(bx1 - w_box * (expand_w - 1) / 2))
-                x2_new = min(frame.shape[1], int(bx2 + w_box * (expand_w - 1) / 2))
-                y1_new = max(0, int(by1 - h_box * margin_up))
-                y2_new = min(frame.shape[0], int(by2 + h_box * expand_h_down))
+                # Square-ish crop with small downward shift and extra height for shoulders.
+                scale = 2.1
+                side = max(w_box, h_box) * scale
+                down_shift = 0.35 * side
+                extra_h = 0.35 * side
+
+                cx = (bx1 + bx2) / 2.0
+                cy = (by1 + by2) / 2.0 + down_shift
+
+                x1_new = int(cx - side / 2)
+                x2_new = int(cx + side / 2)
+                y1_new = int(cy - side / 2)
+                y2_new = int(cy + side / 2 + extra_h)
+
+                # Clamp to frame
+                x1_new = max(0, x1_new)
+                y1_new = max(0, y1_new)
+                x2_new = min(frame.shape[1], x2_new)
+                y2_new = min(frame.shape[0], y2_new)
 
                 crop = frame[y1_new:y2_new, x1_new:x2_new]
                 if crop.shape[0] >= 20 and crop.shape[1] >= 20:
@@ -249,14 +265,14 @@ class TrackManager:
                 meta = self.track_metadata[tid]
                 crop = behavior_crops[idx] if idx < len(behavior_crops) else None
 
-                # Save crop for logged events (non-Neutral) or uncertain samples
+                # Save crop for logged events (non-negative) or uncertain samples (self-learning only)
                 crop_path = ""
-                if crop is not None and (beh != "Neutral" or is_uncertain(conf)):
+                if self.enable_self_learning and crop is not None and (beh != "negative" or is_uncertain(conf)):
                     crop_path = save_crop(crop)
                     meta["last_crop_path"] = crop_path
 
                 # Active learning: uncertain samples go to pending review
-                if crop_path and is_uncertain(conf):
+                if self.enable_self_learning and crop_path and is_uncertain(conf):
                     add_pending_review(
                         crop_path=crop_path,
                         predicted=beh,

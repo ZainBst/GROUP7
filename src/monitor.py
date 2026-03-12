@@ -2,6 +2,7 @@ import cv2 as cv
 import time
 import numpy as np
 import supervision as sv
+import os
 
 # NEW Imports
 from src.track_manager import TrackManager
@@ -58,6 +59,9 @@ class ClassroomMonitorStage2:
             min_recognition_face_size=min_recognition_face_size,
             min_recognition_face_score=min_recognition_face_score,
         )
+        self.enable_self_learning = os.getenv("ENABLE_SELF_LEARNING", "false").strip().lower() in {
+            "1", "true", "yes", "on"
+        }
         
         self.fps = 0
         self.frame_count = 0
@@ -189,7 +193,7 @@ class ClassroomMonitorStage2:
                     if should_log:
                         crop_path = meta.get("last_crop_path", "")
                         event_id = ""
-                        if crop_path:
+                        if crop_path and self.enable_self_learning:
                             event_id = add_training_sample(
                                 crop_path=crop_path,
                                 predicted=current_b,

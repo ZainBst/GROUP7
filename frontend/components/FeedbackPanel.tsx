@@ -7,6 +7,7 @@ import {
     submitReview,
     submitCorrection,
     cropImageUrl,
+    selfLearningEnabled,
 } from "@/lib/api";
 import { useRealtimeEvents } from "@/hooks/useRealtimeEvents";
 
@@ -35,7 +36,9 @@ export function FeedbackPanel() {
     };
 
     useEffect(() => {
-        fetchPending();
+        if (selfLearningEnabled) {
+            fetchPending();
+        }
     }, []);
 
     const handleReview = async (sampleId: string) => {
@@ -96,6 +99,7 @@ export function FeedbackPanel() {
                                 ? "bg-foreground text-background"
                                 : "bg-border/30 text-foreground/80 hover:bg-border/50"
                         }`}
+                        disabled={!selfLearningEnabled}
                     >
                         Review ({pending.length})
                     </button>
@@ -106,6 +110,7 @@ export function FeedbackPanel() {
                                 ? "bg-foreground text-background"
                                 : "bg-border/30 text-foreground/80 hover:bg-border/50"
                         }`}
+                        disabled={!selfLearningEnabled}
                     >
                         Correct Events
                     </button>
@@ -130,7 +135,11 @@ export function FeedbackPanel() {
                 </div>
             )}
 
-            {activeTab === "review" && (
+            {!selfLearningEnabled ? (
+                <div className="text-foreground/60 text-xs py-6 text-center">
+                    Self-learning is disabled. Set <code>NEXT_PUBLIC_ENABLE_SELF_LEARNING=true</code> to enable.
+                </div>
+            ) : activeTab === "review" && (
                 <div className="space-y-4">
                     <p className="text-foreground/60 text-xs">
                         Label uncertain predictions (confidence 0.30–0.50) to improve the model.
