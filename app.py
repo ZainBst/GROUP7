@@ -438,7 +438,7 @@ class FrontendWebcamProcessor:
             meta = self.track_manager.get_metadata().get(track_id)
             if not meta:
                 continue
-            current_b = meta.get("behavior", "Neutral")
+            current_b = meta.get("behavior", "negative")
             last_logged_b = meta.get("last_logged_behavior")
             last_logged_t = meta.get("last_logged_time", 0.0)
             current_time = time.time()
@@ -486,7 +486,7 @@ state = StreamState()
 def _on_detection_event(event):
     state.add_event(
         name=event.get("name", "Unknown"),
-        behavior=event.get("behavior", "Neutral"),
+        behavior=event.get("behavior", "negative"),
         confidence=event.get("confidence", 0.0),
         tracker_id=event.get("track_id"),
         event_id=event.get("event_id"),
@@ -496,7 +496,7 @@ def _on_detection_event(event):
         "detection",
         student_id=event.get("name", "Unknown"),
         tracker_id=event.get("track_id"),
-        behavior=event.get("behavior", "Neutral"),
+        behavior=event.get("behavior", "negative"),
         confidence=event.get("confidence", 0.0),
     )
 

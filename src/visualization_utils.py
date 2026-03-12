@@ -44,10 +44,10 @@ def draw_tracking_results(frame, detections, track_metadata, active_names):
         cv.putText(frame, label, (new_x, new_y - 10), cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
 
         # Show Behavior
-        beh = track_metadata.get(track_id, {}).get('behavior', 'Neutral')
+        beh = track_metadata.get(track_id, {}).get('behavior', 'negative')
         beh_conf = track_metadata.get(track_id, {}).get('behavior_conf', 0.0)
         
-        if beh != "Neutral":
+        if beh != "negative":
             beh_label = f"{beh} {beh_conf:.2f}"
             # Draw below the box
             cv.putText(frame, beh_label, (new_x, new_y + new_h + 20), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)

@@ -1,6 +1,4 @@
 """
-MongoDB-backed event logger (drop-in replacement for the old Supabase client).
-
 Environment variables:
   MONGODB_URI   – MongoDB connection string.
                   Atlas:  mongodb+srv://<user>:<pass>@cluster.mongodb.net/?retryWrites=true&w=majority
@@ -14,6 +12,7 @@ import queue
 import threading
 import logging
 from datetime import datetime, timezone
+from typing import Set
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
@@ -30,7 +29,7 @@ MONGO_DB        = os.getenv("MONGO_DB", "behaviornet")
 MONGO_COL       = os.getenv("MONGO_COL", "classroom_events")
 
 MONGO_URI = MONGO_URI_ATLAS if MONGO_MODE == "atlas" else MONGO_URI_LOCAL
-DISABLED_BEHAVIORS: set[str] = set()  # to disable: {"neutral", "other"}
+DISABLED_BEHAVIORS: Set[str] = set()  # to disable: {"negative", "other"}
 #DISABLED_BEHAVIORS: set[str] = set() #Re-enable all when ready:
 
 # P2: log mode only — never log URI to avoid leaking Atlas credentials

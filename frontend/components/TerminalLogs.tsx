@@ -56,7 +56,7 @@ export function TerminalLogs() {
             if (entry.level === "detection") {
                 const studentId = entry.details?.student_id ?? "Unknown";
                 const trackerId = entry.details?.tracker_id ?? -1;
-                const behavior = entry.details?.behavior ?? "Neutral";
+                const behavior = entry.details?.behavior ?? "negative";
                 const confidence = Math.round((entry.details?.confidence ?? 0) * 100);
                 return {
                     id: entry.id,

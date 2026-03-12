@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 def _class_to_dir(name: str) -> str:
     """Convert class name to safe directory name."""
-    return str(name).strip().lower().replace(" ", "_").replace("-", "_") or "other"
+    return str(name).strip().lower().replace(" ", "_").replace("-", "_") or "negative"
 
 
 def export_dataset(out_dir: str, min_per_class: int = 2) -> bool:

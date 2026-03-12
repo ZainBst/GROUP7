@@ -176,7 +176,7 @@ class ClassroomMonitorStage2:
             meta = self.track_manager.get_metadata().get(track_id)
             if meta:
                     # Smart Logging: Log only if behavior CHANGED or it's been > 10s
-                    current_b = meta.get('behavior', 'Neutral')
+                    current_b = meta.get('behavior', 'negative')
                     last_logged_b = meta.get('last_logged_behavior', None)
                     last_logged_t = meta.get('last_logged_time', 0)
                     

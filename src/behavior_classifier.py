@@ -1,12 +1,15 @@
 # src/behavior_classifier.py
 import os
 
+from typing import Optional
+
+import cv2 as cv
 from ultralytics import YOLO
 import numpy as np
 
 
 class BehaviorClassifier:
-    def __init__(self, model_path: str):
+    def __init__(self, model_path: str, grayscale: Optional[bool] = None):
         """Load YOLO11 classification model."""
         import torch
 
@@ -22,6 +25,16 @@ class BehaviorClassifier:
 
         self.model = YOLO(model_path)
         self.model.to(device)
+        if grayscale is None:
+            env_flag = os.getenv("BEHAVIOR_GRAYSCALE", "").strip().lower()
+            if env_flag in {"1", "true", "yes", "on"}:
+                grayscale = True
+            elif env_flag in {"0", "false", "no", "off"}:
+                grayscale = False
+            else:
+                model_hint = model_path.lower()
+                grayscale = "grey" in model_hint or "gray" in model_hint
+        self.grayscale = bool(grayscale)
         # Thresholds aligned with current behavior classes.
         self.thresholds = {
             "down": 0.70,
@@ -33,6 +46,15 @@ class BehaviorClassifier:
         }
         print(f"[Behavior] Loaded model: {model_path} on {device}")
         print(f"[Behavior] Classes: {self.model.names}")
+        print(f"[Behavior] Grayscale preprocessing: {self.grayscale}")
+
+    def _preprocess_crop(self, crop: np.ndarray) -> np.ndarray:
+        if not self.grayscale:
+            return crop
+        if crop.ndim == 2:
+            return cv.cvtColor(crop, cv.COLOR_GRAY2BGR)
+        gray = cv.cvtColor(crop, cv.COLOR_BGR2GRAY)
+        return cv.cvtColor(gray, cv.COLOR_GRAY2BGR)
 
     def _pick_best_class(self, probs_data, conf_threshold: float) -> tuple[str, float]:
         """Loop all classes by confidence; return first that meets threshold. Negative only if none pass."""
@@ -61,6 +83,7 @@ class BehaviorClassifier:
         if crop.size == 0 or crop.shape[0] < 20 or crop.shape[1] < 20:
             return "negative", 0.0
 
+        crop = self._preprocess_crop(crop)
         results = self.model.predict(crop, verbose=False)
 
         if not results or len(results[0].probs.data) == 0:
@@ -77,6 +100,8 @@ class BehaviorClassifier:
             return []
 
         # YOLO11 batch inference
+        if self.grayscale:
+            crops = [self._preprocess_crop(crop) for crop in crops]
         results = self.model.predict(crops, verbose=False)
 
         batch_output = []
