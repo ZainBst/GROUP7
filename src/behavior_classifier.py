@@ -35,12 +35,12 @@ class BehaviorClassifier:
         print(f"[Behavior] Classes: {self.model.names}")
 
     def _pick_best_class(self, probs_data, conf_threshold: float) -> tuple[str, float]:
-        """Top-1, then top-2 fallback. Return first that meets threshold; negative only if both fail."""
+        """Loop all classes by confidence; return first that meets threshold. Negative only if none pass."""
         probs = probs_data.cpu().numpy() if hasattr(probs_data, "cpu") else np.asarray(probs_data)
         if probs.ndim > 1:
             probs = probs.ravel()
         sorted_indices = np.argsort(probs)[::-1]
-        for rank in range(min(2, len(sorted_indices))):
+        for rank in range(len(sorted_indices)):
             idx = int(sorted_indices[rank])
             class_name = self.model.names[idx]
             class_name_norm = str(class_name).strip().lower().replace("_", " ")
