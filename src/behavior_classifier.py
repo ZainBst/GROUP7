@@ -34,10 +34,30 @@ class BehaviorClassifier:
         print(f"[Behavior] Loaded model: {model_path} on {device}")
         print(f"[Behavior] Classes: {self.model.names}")
 
+    def _pick_best_class(self, probs_data, conf_threshold: float) -> tuple[str, float]:
+        """Check all known behaviors; return the best that meets its threshold. Negative only if all fail."""
+        probs = probs_data.cpu().numpy() if hasattr(probs_data, "cpu") else np.asarray(probs_data)
+        if probs.ndim > 1:
+            probs = probs.ravel()
+        best_class, best_conf = None, -1.0
+        for idx in range(len(probs)):
+            class_name = self.model.names[idx]
+            class_name_norm = str(class_name).strip().lower().replace("_", " ")
+            if class_name_norm not in self.thresholds:
+                continue
+            confidence = float(probs[idx])
+            required_conf = self.thresholds[class_name_norm]
+            if confidence >= required_conf and confidence > best_conf:
+                best_class, best_conf = class_name, confidence
+        if best_class is not None:
+            return best_class, best_conf
+        return "negative", float(np.max(probs))
+
     def classify(self, crop: np.ndarray, conf_threshold: float = 0.35) -> tuple[str, float]:
         """
         Classify behavior on an upper-body crop.
         Returns (class_name, confidence) or ("negative", 0.0)
+        If top-1 is below threshold, checks other classes in order of confidence.
         """
         if crop.size == 0 or crop.shape[0] < 20 or crop.shape[1] < 20:
             return "negative", 0.0
@@ -47,18 +67,7 @@ class BehaviorClassifier:
         if not results or len(results[0].probs.data) == 0:
             return "negative", 0.0
 
-        top_idx = results[0].probs.top1
-        confidence = float(results[0].probs.top1conf)
-        class_name = self.model.names[top_idx]
-
-        class_name_norm = str(class_name).strip().lower().replace("_", " ")
-        # Use specific threshold if set, otherwise default to conf_threshold
-        required_conf = self.thresholds.get(class_name_norm, conf_threshold)
-
-        if confidence < required_conf:
-            return "negative", confidence
-
-        return class_name, confidence
+        return self._pick_best_class(results[0].probs.data, conf_threshold)
 
     def classify_batch(self, crops: list[np.ndarray], conf_threshold: float = 0.35) -> list[tuple[str, float]]:
         """
@@ -77,17 +86,6 @@ class BehaviorClassifier:
             if not r or len(r.probs.data) == 0:
                 batch_output.append(("negative", 0.0))
                 continue
-
-            top_idx = r.probs.top1
-            confidence = float(r.probs.top1conf)
-            class_name = self.model.names[top_idx]
-            class_name_norm = str(class_name).strip().lower().replace("_", " ")
-
-            required_conf = self.thresholds.get(class_name_norm, conf_threshold)
-
-            if confidence < required_conf:
-                batch_output.append(("negative", confidence))
-            else:
-                batch_output.append((class_name, confidence))
+            batch_output.append(self._pick_best_class(r.probs.data, conf_threshold))
 
         return batch_output
