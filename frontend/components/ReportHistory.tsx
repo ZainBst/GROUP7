@@ -11,9 +11,9 @@ import {
     TableRow,
     TextRun,
     WidthType,
-    HeadingLevel,
     AlignmentType,
 } from "docx";
+import { buildPeriodOverviewParagraphs } from "@/lib/reportUtils";
 
 // -- Types ------------------------------------------------------------------
 type StoredStudent = {
@@ -47,49 +47,13 @@ async function _redownloadReport(report: ReportRecord) {
             globalBreakdown[b] = (globalBreakdown[b] ?? 0) + c;
         }
     }
-    const topBehaviorLabel =
-        Object.entries(globalBreakdown).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "-";
 
-    const summaryParagraphs: Paragraph[] = [
-        new Paragraph({
-            text: "BehaviorNet - Student Behavior Report",
-            heading: HeadingLevel.HEADING_1,
-            spacing: { after: 200 },
-        }),
-        new Paragraph({
-            children: [
-                new TextRun({
-                    text: `Generated: ${generatedAt.toLocaleString()}`,
-                    italics: true,
-                    size: 20,
-                }),
-            ],
-            spacing: { after: 100 },
-        }),
-        ...(report.session_start
-            ? [
-                  new Paragraph({
-                      children: [
-                          new TextRun({
-                              text: `Session Start: ${new Date(report.session_start).toLocaleString()}`,
-                              italics: true,
-                              size: 20,
-                          }),
-                      ],
-                      spacing: { after: 100 },
-                  }),
-              ]
-            : []),
-        new Paragraph({
-            children: [
-                new TextRun({
-                    text: `Total Students: ${report.total_students}   |   Most Common Behaviour: ${topBehaviorLabel}`,
-                    size: 20,
-                }),
-            ],
-            spacing: { after: 400 },
-        }),
-    ];
+    const summaryParagraphs = buildPeriodOverviewParagraphs(
+        globalBreakdown,
+        students,
+        report.session_start,
+        generatedAt,
+    );
 
     const colHeaders = [
         "Student ID",

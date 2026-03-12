@@ -11,9 +11,9 @@ import {
     TableRow,
     TextRun,
     WidthType,
-    HeadingLevel,
     AlignmentType,
 } from "docx";
+import { buildPeriodOverviewParagraphs } from "@/lib/reportUtils";
 
 async function buildAndDownloadDoc(
     students: { id: string; name: string; latestBehavior: string; totalEvents: number; behaviorBreakdown: Record<string, number>; firstSeen: string; lastSeen: string }[],
@@ -27,49 +27,13 @@ async function buildAndDownloadDoc(
             globalBreakdown[b] = (globalBreakdown[b] ?? 0) + c;
         }
     }
-    const topBehaviorLabel =
-        Object.entries(globalBreakdown).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "—";
 
-    const summaryParagraphs: Paragraph[] = [
-        new Paragraph({
-            text: "BehaviorNet — Student Behavior Report",
-            heading: HeadingLevel.HEADING_1,
-            spacing: { after: 200 },
-        }),
-        new Paragraph({
-            children: [
-                new TextRun({
-                    text: `Generated: ${now.toLocaleString()}`,
-                    italics: true,
-                    size: 20,
-                }),
-            ],
-            spacing: { after: 100 },
-        }),
-        ...(sessionStart
-            ? [
-                  new Paragraph({
-                      children: [
-                          new TextRun({
-                              text: `Session Start: ${new Date(sessionStart).toLocaleString()}`,
-                              italics: true,
-                              size: 20,
-                          }),
-                      ],
-                      spacing: { after: 100 },
-                  }),
-              ]
-            : []),
-        new Paragraph({
-            children: [
-                new TextRun({
-                    text: `Total Students: ${students.length}   |   Most Common Behaviour: ${topBehaviorLabel}`,
-                    size: 20,
-                }),
-            ],
-            spacing: { after: 400 },
-        }),
-    ];
+    const summaryParagraphs = buildPeriodOverviewParagraphs(
+        globalBreakdown,
+        students,
+        sessionStart,
+        now,
+    );
 
     const colHeaders = [
         "Student ID",
