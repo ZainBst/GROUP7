@@ -24,12 +24,12 @@ class BehaviorClassifier:
         self.model.to(device)
         # Thresholds aligned with current behavior classes.
         self.thresholds = {
-            "down": 0.90,
-            "hand": 0.70,
-            "phone": 0.70,
-            "turn": 0.70,
-            "upright": 0.80,
-            "write": 0.80,
+            "down": 0.70,
+            "hand": 0.50,
+            "phone": 0.50,
+            "turn": 0.50,
+            "upright": 0.50,
+            "write": 0.50,
         }
         print(f"[Behavior] Loaded model: {model_path} on {device}")
         print(f"[Behavior] Classes: {self.model.names}")
