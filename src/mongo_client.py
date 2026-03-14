@@ -29,8 +29,7 @@ MONGO_DB        = os.getenv("MONGO_DB", "behaviornet")
 MONGO_COL       = os.getenv("MONGO_COL", "classroom_events")
 
 MONGO_URI = MONGO_URI_ATLAS if MONGO_MODE == "atlas" else MONGO_URI_LOCAL
-DISABLED_BEHAVIORS: Set[str] = set()  # to disable: {"negative", "other"}
-#DISABLED_BEHAVIORS: set[str] = set() #Re-enable all when ready:
+DISABLED_BEHAVIORS: Set[str] = {"negative"}
 
 # P2: log mode only — never log URI to avoid leaking Atlas credentials
 logger.info(f"[MongoDB] mode={MONGO_MODE}")

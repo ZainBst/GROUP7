@@ -128,7 +128,7 @@ class ClassroomMonitorStage2:
                 current_time = time.time()
                 should_log = (current_b != last_logged_b) or ((current_time - last_logged_t) > 10.0)
 
-                if should_log:
+                if should_log and current_b != "negative":
                     crop_path = meta.get("last_crop_path", "")
                     event_id = ""
                     if crop_path and self.enable_self_learning:
