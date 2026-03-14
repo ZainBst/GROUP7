@@ -1,6 +1,14 @@
-import { Paragraph, TextRun, HeadingLevel } from "docx";
+import {
+    Paragraph,
+    TextRun,
+    HeadingLevel,
+    Table,
+    TableRow,
+    TableCell,
+    WidthType,
+    AlignmentType,
+} from "docx";
 
-// Behaviors considered engaged (positive) vs disengaged (negative)
 const POSITIVE_BEHAVIORS = new Set(["upright", "write", "hand"]);
 const NEGATIVE_BEHAVIORS = new Set(["down", "phone", "turn"]);
 
@@ -11,13 +19,35 @@ function getEngagementLevel(score: number): string {
     return "Needs attention";
 }
 
+function engagementScore(breakdown: Record<string, number>): number {
+    let pos = 0, neg = 0;
+    for (const [b, c] of Object.entries(breakdown)) {
+        const key = b.toLowerCase().trim().replace(/_/g, " ");
+        if (POSITIVE_BEHAVIORS.has(key)) pos += c;
+        else if (NEGATIVE_BEHAVIORS.has(key)) neg += c;
+    }
+    const total = pos + neg;
+    return total > 0 ? Math.round((pos / total) * 100) : 0;
+}
+
+function formatDuration(startIso: string, endIso: string): string {
+    const mins = Math.round((new Date(endIso).getTime() - new Date(startIso).getTime()) / 60000);
+    if (mins <= 0) return "< 1m";
+    if (mins >= 60) return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+    return `${mins}m`;
+}
+
 type StudentLike = {
     name: string;
     firstSeen?: string;
     first_seen?: string;
     lastSeen?: string;
     last_seen?: string;
+    behaviorBreakdown?: Record<string, number>;
+    behavior_breakdown?: Record<string, number>;
 };
+
+// ── Period Overview paragraphs ────────────────────────────────────────────────
 
 export function buildPeriodOverviewParagraphs(
     globalBreakdown: Record<string, number>,
@@ -29,38 +59,23 @@ export function buildPeriodOverviewParagraphs(
     const sortedBehaviors = Object.entries(globalBreakdown).sort((a, b) => b[1] - a[1]);
     const topBehavior = sortedBehaviors[0]?.[0] ?? "—";
 
-    // Session end = max lastSeen
     const lastSeens = students.map((s) => s.lastSeen ?? s.last_seen).filter(Boolean) as string[];
     const sessionEnd = lastSeens.length > 0 ? lastSeens.reduce((a, b) => (a > b ? a : b)) : null;
 
-    // Duration
     let durationStr = "—";
-    if (sessionStart && sessionEnd) {
-        const start = new Date(sessionStart).getTime();
-        const end = new Date(sessionEnd).getTime();
-        const mins = Math.round((end - start) / 60000);
-        if (mins >= 60) {
-            const h = Math.floor(mins / 60);
-            const m = mins % 60;
-            durationStr = `${h}h ${m}m`;
-        } else {
-            durationStr = `${mins}m`;
-        }
-    }
+    if (sessionStart && sessionEnd) durationStr = formatDuration(sessionStart, sessionEnd);
 
-    // Engagement
-    let positiveCount = 0;
-    let negativeCount = 0;
+    let positiveCount = 0, negativeCount = 0;
     for (const [behavior, count] of Object.entries(globalBreakdown)) {
         const b = behavior.toLowerCase().trim().replace(/_/g, " ");
         if (POSITIVE_BEHAVIORS.has(b)) positiveCount += count;
         else if (NEGATIVE_BEHAVIORS.has(b)) negativeCount += count;
     }
-    const engagementTotal = positiveCount + negativeCount;
-    const engagementScore = engagementTotal > 0 ? Math.round((positiveCount / engagementTotal) * 100) : 0;
-    const engagementLevel = getEngagementLevel(engagementScore);
+    const engTotal = positiveCount + negativeCount;
+    const classEngScore = engTotal > 0 ? Math.round((positiveCount / engTotal) * 100) : 0;
+    const classEngLevel = getEngagementLevel(classEngScore);
 
-    const paragraphs: Paragraph[] = [
+    return [
         new Paragraph({
             text: "BehaviorNet — Student Behavior Report",
             heading: HeadingLevel.HEADING_1,
@@ -68,17 +83,20 @@ export function buildPeriodOverviewParagraphs(
         }),
         new Paragraph({
             children: [new TextRun({ text: `Generated: ${generatedAt.toLocaleString()}`, italics: true, size: 20 })],
-            spacing: { after: 150 },
+            spacing: { after: 200 },
         }),
+
+        // ── Period Overview ──
         new Paragraph({
-            text: "PERIOD OVERVIEW",
+            text: "Period Overview",
             heading: HeadingLevel.HEADING_2,
-            spacing: { before: 200, after: 150 },
+            spacing: { before: 200, after: 120 },
         }),
         new Paragraph({
             children: [
+                new TextRun({ text: "Session:  ", size: 20, bold: true }),
                 new TextRun({
-                    text: `Period: ${sessionStart ? new Date(sessionStart).toLocaleString() : "—"} → ${sessionEnd ? new Date(sessionEnd).toLocaleString() : "—"}`,
+                    text: `${sessionStart ? new Date(sessionStart).toLocaleString() : "—"}  →  ${sessionEnd ? new Date(sessionEnd).toLocaleString() : "—"}`,
                     size: 20,
                 }),
             ],
@@ -86,41 +104,121 @@ export function buildPeriodOverviewParagraphs(
         }),
         new Paragraph({
             children: [
-                new TextRun({ text: `Duration: ${durationStr}`, size: 20 }),
-                new TextRun({ text: "   |   ", size: 20 }),
-                new TextRun({ text: `Students: ${students.length}`, size: 20 }),
+                new TextRun({ text: "Duration:  ", size: 20, bold: true }),
+                new TextRun({ text: durationStr, size: 20 }),
+                new TextRun({ text: "     Students present:  ", size: 20, bold: true }),
+                new TextRun({ text: String(students.length), size: 20 }),
             ],
-            spacing: { after: 150 },
+            spacing: { after: 80 },
         }),
         new Paragraph({
             children: [
-                new TextRun({ text: "Overall Class Engagement: ", size: 20 }),
-                new TextRun({ text: `${engagementScore}%`, size: 20, bold: true }),
-                new TextRun({ text: ` (${engagementLevel})`, size: 20 }),
+                new TextRun({ text: "Overall class engagement:  ", size: 20, bold: true }),
+                new TextRun({ text: `${classEngScore}%`, size: 20, bold: true }),
+                new TextRun({ text: `  (${classEngLevel})`, size: 20 }),
             ],
             spacing: { after: 150 },
         }),
-        new Paragraph({
-            children: [new TextRun({ text: "Behavior Breakdown:", size: 20, bold: true })],
-            spacing: { after: 80 },
-        }),
-        ...sortedBehaviors.map(
-            ([behavior, count]) =>
-                new Paragraph({
-                    children: [
-                        new TextRun({
-                            text: `  ${behavior}: ${count} (${totalCount > 0 ? Math.round((count / totalCount) * 100) : 0}%)`,
-                            size: 18,
-                        }),
-                    ],
-                    spacing: { after: 60 },
-                }),
-        ),
-        new Paragraph({
-            children: [new TextRun({ text: `Most common: ${topBehavior}`, size: 18, italics: true })],
-            spacing: { after: 300 },
-        }),
-    ];
 
-    return paragraphs;
+        // ── Class-wide behavior breakdown ──
+        new Paragraph({
+            text: "Class Behavior Breakdown",
+            heading: HeadingLevel.HEADING_2,
+            spacing: { before: 200, after: 120 },
+        }),
+        ...sortedBehaviors.map(([behavior, count]) =>
+            new Paragraph({
+                children: [
+                    new TextRun({ text: `  ${behavior}`, size: 20, bold: behavior === topBehavior }),
+                    new TextRun({
+                        text: `   ${count} events   (${totalCount > 0 ? Math.round((count / totalCount) * 100) : 0}%)${behavior === topBehavior ? "  ← most common" : ""}`,
+                        size: 18,
+                        italics: behavior === topBehavior,
+                    }),
+                ],
+                spacing: { after: 60 },
+            }),
+        ),
+        new Paragraph({ text: "", spacing: { after: 300 } }),
+    ];
+}
+
+// ── Student Performance Summary table ────────────────────────────────────────
+
+type FullStudent = {
+    id?: string;
+    name: string;
+    firstSeen?: string;
+    first_seen?: string;
+    lastSeen?: string;
+    last_seen?: string;
+    behaviorBreakdown?: Record<string, number>;
+    behavior_breakdown?: Record<string, number>;
+};
+
+const COL_HEADERS = ["Name", "Engagement", "Dominant Behaviour", "Time Present", "Behaviour Profile"];
+const COL_WIDTHS  = [22, 14, 18, 14, 32];
+
+function cell(children: Paragraph[], width: number): TableCell {
+    return new TableCell({
+        width: { size: width, type: WidthType.PERCENTAGE },
+        children,
+    });
+}
+
+function para(text: string, opts: { bold?: boolean; italics?: boolean; size?: number } = {}): Paragraph {
+    return new Paragraph({
+        children: [new TextRun({ text, bold: opts.bold, italics: opts.italics, size: opts.size ?? 18 })],
+    });
+}
+
+export function buildStudentSummaryTable(students: FullStudent[]): Table {
+    const headerRow = new TableRow({
+        tableHeader: true,
+        children: COL_HEADERS.map((label, i) =>
+            new TableCell({
+                width: { size: COL_WIDTHS[i], type: WidthType.PERCENTAGE },
+                children: [
+                    new Paragraph({
+                        alignment: AlignmentType.CENTER,
+                        children: [new TextRun({ text: label, bold: true, size: 20 })],
+                    }),
+                ],
+            }),
+        ),
+    });
+
+    const dataRows = students.map((s) => {
+        const breakdown = s.behaviorBreakdown ?? s.behavior_breakdown ?? {};
+        const totalEvents = Object.values(breakdown).reduce((a, b) => a + b, 0);
+        const sorted = Object.entries(breakdown).sort((a, b) => b[1] - a[1]);
+        const dominant = sorted[0]?.[0] ?? "—";
+        const score = engagementScore(breakdown);
+        const level = getEngagementLevel(score);
+
+        const first = s.firstSeen ?? s.first_seen ?? "";
+        const last = s.lastSeen ?? s.last_seen ?? "";
+        const timePresent = first && last ? formatDuration(first, last) : "—";
+
+        // "upright 60% · write 20% · down 20%"
+        const profileParts = sorted.map(
+            ([b, c]) => `${b} ${totalEvents > 0 ? Math.round((c / totalEvents) * 100) : 0}%`,
+        );
+        const profileStr = profileParts.join("  ·  ") || "—";
+
+        return new TableRow({
+            children: [
+                cell([para(s.name, { bold: true })], COL_WIDTHS[0]),
+                cell([para(`${score}%  (${level})`)], COL_WIDTHS[1]),
+                cell([para(dominant)], COL_WIDTHS[2]),
+                cell([para(timePresent)], COL_WIDTHS[3]),
+                cell([para(profileStr, { size: 16 })], COL_WIDTHS[4]),
+            ],
+        });
+    });
+
+    return new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        rows: [headerRow, ...dataRows],
+    });
 }

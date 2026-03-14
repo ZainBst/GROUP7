@@ -2,18 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { getReports } from "@/lib/api";
-import {
-    Document,
-    Packer,
-    Paragraph,
-    Table,
-    TableCell,
-    TableRow,
-    TextRun,
-    WidthType,
-    AlignmentType,
-} from "docx";
-import { buildPeriodOverviewParagraphs } from "@/lib/reportUtils";
+import { Document, Packer } from "docx";
+import { buildPeriodOverviewParagraphs, buildStudentSummaryTable } from "@/lib/reportUtils";
 
 // -- Types ------------------------------------------------------------------
 type StoredStudent = {
@@ -55,79 +45,14 @@ async function _redownloadReport(report: ReportRecord) {
         generatedAt,
     );
 
-    const colHeaders = [
-        "Student ID",
-        "Name",
-        "Latest Behaviour",
-        "Behaviour Breakdown",
-        "First Seen",
-        "Last Seen",
-    ];
-    const colWidths = [10, 20, 15, 30, 12, 13];
-
-    const headerRow = new TableRow({
-        tableHeader: true,
-        children: colHeaders.map(
-            (label, i) =>
-                new TableCell({
-                    width: { size: colWidths[i], type: WidthType.PERCENTAGE },
-                    children: [
-                        new Paragraph({
-                            alignment: AlignmentType.CENTER,
-                            children: [new TextRun({ text: label, bold: true, size: 20 })],
-                        }),
-                    ],
-                }),
-        ),
-    });
-
-    const dataRows = students.map((student) => {
-        const sortedBreakdown = Object.entries(student.behavior_breakdown ?? {}).sort(
-            (a, b) => b[1] - a[1],
-        );
-        const breakdownParagraphs = sortedBreakdown.map(
-            ([behavior, count]) =>
-                new Paragraph({
-                    children: [
-                        new TextRun({
-                            text: `${behavior}: ${count} (${Math.round((count / student.total_events) * 100)}%)`,
-                            size: 18,
-                        }),
-                    ],
-                    spacing: { after: 60 },
-                }),
-        );
-        return new TableRow({
-            children: [
-                new TableCell({ children: [new Paragraph(student.id ?? "")] }),
-                new TableCell({ children: [new Paragraph(student.name ?? "")] }),
-                new TableCell({
-                    children: [new Paragraph(student.latest_behavior ?? "")],
-                }),
-                new TableCell({ children: breakdownParagraphs.length ? breakdownParagraphs : [new Paragraph("")] }),
-                new TableCell({
-                    children: [
-                        new Paragraph(new Date(student.first_seen).toLocaleString()),
-                    ],
-                }),
-                new TableCell({
-                    children: [
-                        new Paragraph(new Date(student.last_seen).toLocaleString()),
-                    ],
-                }),
-            ],
-        });
-    });
+    const studentTable = buildStudentSummaryTable(students);
 
     const doc = new Document({
         sections: [
             {
                 children: [
                     ...summaryParagraphs,
-                    new Table({
-                        width: { size: 100, type: WidthType.PERCENTAGE },
-                        rows: [headerRow, ...dataRows],
-                    }),
+                    studentTable,
                 ],
             },
         ],
