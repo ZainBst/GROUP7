@@ -13,28 +13,11 @@ function getEngagementLevel(score: number): string {
 
 type StudentLike = {
     name: string;
-    totalEvents?: number;
-    total_events?: number;
     firstSeen?: string;
     first_seen?: string;
     lastSeen?: string;
     last_seen?: string;
-    behaviorBreakdown?: Record<string, number>;
-    behavior_breakdown?: Record<string, number>;
 };
-
-function studentEngagementScore(breakdown: Record<string, number> | undefined): number {
-    if (!breakdown) return 0;
-    let pos = 0,
-        neg = 0;
-    for (const [b, c] of Object.entries(breakdown)) {
-        const key = b.toLowerCase().trim().replace(/_/g, " ");
-        if (POSITIVE_BEHAVIORS.has(key)) pos += c;
-        else if (NEGATIVE_BEHAVIORS.has(key)) neg += c;
-    }
-    const total = pos + neg;
-    return total > 0 ? Math.round((pos / total) * 100) : 0;
-}
 
 export function buildPeriodOverviewParagraphs(
     globalBreakdown: Record<string, number>,
@@ -77,14 +60,6 @@ export function buildPeriodOverviewParagraphs(
     const engagementScore = engagementTotal > 0 ? Math.round((positiveCount / engagementTotal) * 100) : 0;
     const engagementLevel = getEngagementLevel(engagementScore);
 
-    // Most/least engaged (by engagement score)
-    const getBreakdown = (s: StudentLike) => s.behaviorBreakdown ?? s.behavior_breakdown ?? {};
-    const sortedByEngagement = [...students].sort(
-        (a, b) => studentEngagementScore(getBreakdown(b)) - studentEngagementScore(getBreakdown(a)),
-    );
-    const mostEngaged = sortedByEngagement[0];
-    const leastEngaged = sortedByEngagement[sortedByEngagement.length - 1];
-
     const paragraphs: Paragraph[] = [
         new Paragraph({
             text: "BehaviorNet — Student Behavior Report",
@@ -122,38 +97,6 @@ export function buildPeriodOverviewParagraphs(
                 new TextRun({ text: "Overall Class Engagement: ", size: 20 }),
                 new TextRun({ text: `${engagementScore}%`, size: 20, bold: true }),
                 new TextRun({ text: ` (${engagementLevel})`, size: 20 }),
-            ],
-            spacing: { after: 80 },
-        }),
-        new Paragraph({
-            children: [
-                new TextRun({
-                    text: `  Positive: ${positiveCount}   |   Negative: ${negativeCount}`,
-                    size: 18,
-                    italics: true,
-                }),
-            ],
-            spacing: { after: 80 },
-        }),
-        new Paragraph({
-            children: [
-                new TextRun({
-                    text: mostEngaged
-                        ? `Most engaged: ${mostEngaged.name} (${studentEngagementScore(getBreakdown(mostEngaged))}%)`
-                        : "—",
-                    size: 18,
-                }),
-            ],
-            spacing: { after: 60 },
-        }),
-        new Paragraph({
-            children: [
-                new TextRun({
-                    text: leastEngaged && leastEngaged !== mostEngaged
-                        ? `Least engaged: ${leastEngaged.name} (${studentEngagementScore(getBreakdown(leastEngaged))}%)`
-                        : "—",
-                    size: 18,
-                }),
             ],
             spacing: { after: 150 },
         }),

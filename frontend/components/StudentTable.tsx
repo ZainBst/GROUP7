@@ -38,13 +38,12 @@ async function buildAndDownloadDoc(
     const colHeaders = [
         "Student ID",
         "Name",
-        "Total Events",
         "Latest Behaviour",
         "Behaviour Breakdown",
         "First Seen",
         "Last Seen",
     ];
-    const colWidths = [10, 18, 10, 15, 27, 10, 10];
+    const colWidths = [10, 20, 15, 30, 12, 13];
 
     const headerRow = new TableRow({
         tableHeader: true,
@@ -82,7 +81,6 @@ async function buildAndDownloadDoc(
             children: [
                 new TableCell({ children: [new Paragraph(student.id)] }),
                 new TableCell({ children: [new Paragraph(student.name)] }),
-                new TableCell({ children: [new Paragraph(String(student.totalEvents))] }),
                 new TableCell({ children: [new Paragraph(student.latestBehavior)] }),
                 new TableCell({ children: breakdownParagraphs }),
                 new TableCell({
