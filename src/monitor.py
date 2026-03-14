@@ -18,6 +18,7 @@ class ClassroomMonitorStage2:
         recognizer=None,
         behavior_classifier=None,
         behavior_interval=1.0,
+        behavior_max_batch=6,
         recheck_interval=2.0,
         detect_interval=2,
         processing_width=960,
@@ -49,6 +50,7 @@ class ClassroomMonitorStage2:
             recheck_interval=recheck_interval,
             behavior_classifier=self.behavior_classifier,
             behavior_interval=self.behavior_interval,
+            max_behavior_batch=behavior_max_batch,
             min_recognition_face_size=min_recognition_face_size,
             min_recognition_face_score=min_recognition_face_score,
         )

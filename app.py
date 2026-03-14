@@ -103,6 +103,7 @@ class AppConfig:
         self.detect_interval = _env_int("DETECT_INTERVAL", 1)
         self.recheck_interval = _env_float("RECHECK_INTERVAL", 1.5)
         self.behavior_interval = _env_float("BEHAVIOR_INTERVAL", 1.0)
+        self.behavior_max_batch = _env_int("BEHAVIOR_MAX_BATCH", 6)
         self.processing_width = _env_int("PROCESSING_WIDTH", 960)
         self.require_single_worker = _env_bool("REQUIRE_SINGLE_WORKER", True)
         self.max_stream_seconds = _env_int("MAX_STREAM_SECONDS", 0)
@@ -349,6 +350,7 @@ class FrontendWebcamProcessor:
         detect_interval=1,
         recheck_interval=1.5,
         behavior_interval=1.0,
+        behavior_max_batch=6,
         processing_width=960,
         event_callback=None,
         min_recognition_face_size=0,
@@ -378,6 +380,7 @@ class FrontendWebcamProcessor:
             recheck_interval=recheck_interval,
             behavior_classifier=behavior_classifier,
             behavior_interval=behavior_interval,
+            max_behavior_batch=behavior_max_batch,
             min_recognition_face_size=min_recognition_face_size,
             min_recognition_face_score=min_recognition_face_score,
         )
@@ -560,6 +563,7 @@ async def start_stream(
             detect_interval=CONFIG.detect_interval,
             recheck_interval=CONFIG.recheck_interval,
             behavior_interval=CONFIG.behavior_interval,
+            behavior_max_batch=CONFIG.behavior_max_batch,
             processing_width=CONFIG.processing_width,
             event_callback=_on_detection_event,
             min_recognition_face_size=CONFIG.min_recognition_face_size,
@@ -710,6 +714,7 @@ def generate_frames():
             recognizer=state.recognizer,
             behavior_classifier=state.behavior_classifier,
             behavior_interval=CONFIG.behavior_interval,
+            behavior_max_batch=CONFIG.behavior_max_batch,
             detect_interval=CONFIG.detect_interval,
             recheck_interval=CONFIG.recheck_interval,
             processing_width=CONFIG.processing_width,
