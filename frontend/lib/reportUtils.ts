@@ -131,7 +131,7 @@ export function buildPeriodOverviewParagraphs(
                 children: [
                     new TextRun({ text: `  ${behavior}`, size: 20, bold: behavior === topBehavior }),
                     new TextRun({
-                        text: `   ${count} events   (${totalCount > 0 ? Math.round((count / totalCount) * 100) : 0}%)${behavior === topBehavior ? "  ← most common" : ""}`,
+                        text: `   ${totalCount > 0 ? Math.round((count / totalCount) * 100) : 0}%${behavior === topBehavior ? "  ← most common" : ""}`,
                         size: 18,
                         italics: behavior === topBehavior,
                     }),
