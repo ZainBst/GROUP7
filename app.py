@@ -114,6 +114,8 @@ class AppConfig:
         # Set >0 values to enable quality gating.
         self.min_recognition_face_size = _env_int("MIN_RECOGNITION_FACE_SIZE", 0)
         self.min_recognition_face_score = _env_float("MIN_RECOGNITION_FACE_SCORE", 0.0)
+        self.detector_conf_threshold = _env_float("DETECTOR_CONF_THRESHOLD", 0.7)
+        self.detector_nms_threshold = _env_float("DETECTOR_NMS_THRESHOLD", 0.3)
         self.detector_model_path = os.getenv(
             "DETECTOR_MODEL_PATH",
             os.path.join(self.base_dir, "face_detection_yunet_2023mar_int8.onnx")
@@ -227,7 +229,11 @@ class StreamState:
     def load_models(self):
         try:
             if self.detector is None:
-                self.detector = YunetFaceDetector(model_path=self.model_path)
+                self.detector = YunetFaceDetector(
+                    model_path=self.model_path,
+                    conf_threshold=CONFIG.detector_conf_threshold,
+                    nms_threshold=CONFIG.detector_nms_threshold,
+                )
                 logger.info("Detector loaded")
                 self.add_log("Detector model loaded", "system", component="detector")
             
