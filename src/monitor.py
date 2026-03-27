@@ -42,6 +42,7 @@ class ClassroomMonitorStage2:
         except TypeError:
             self.tracker = sv.ByteTrack()
 
+        # NEW: Track Manager
         self.behavior_classifier = behavior_classifier
         self.behavior_interval = behavior_interval
         self.event_callback = event_callback
