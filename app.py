@@ -15,8 +15,13 @@ import threading
 import json
 import asyncio
 
-# Suppress FutureWarning from scikit-image used internally by insightface
+# Suppress FutureWarning from scikit-image used internally by insightface.
+# The module= filter doesn't work here because insightface calls skimage at a high
+# stacklevel, so the warning appears to originate inside insightface. Use message
+# pattern instead to target the specific deprecated `estimate` call.
+warnings.filterwarnings("ignore", category=FutureWarning, message=r".*`estimate`.*deprecated.*")
 warnings.filterwarnings("ignore", category=FutureWarning, module="skimage")
+warnings.filterwarnings("ignore", category=FutureWarning, module="insightface")
 from collections import deque
 from datetime import datetime, timezone
 from typing import Optional
@@ -624,6 +629,7 @@ async def start_stream(
             event_callback=_on_detection_event,
             min_recognition_face_size=CONFIG.min_recognition_face_size,
             min_recognition_face_score=CONFIG.min_recognition_face_score,
+            behavior_max_batch=CONFIG.behavior_max_batch,
         )
         with state.lock:
             state.source = None
