@@ -744,36 +744,38 @@ def generate_frames():
             # Read from monitor's cap (with retry for transient failures)
             ret, frame = monitor.cap.read()
             if not ret:
+                # For uploaded video files, EOF = end of video — stop immediately, no loop.
+                if active_source_type == "upload":
+                    logger.info("Video file finished (EOF): %s", local_source)
+                    state.add_log("Video finished", "system")
+                    break
+
+                # For live sources (RTSP/webcam), retry then attempt reconnect.
                 for attempt in range(CONFIG.read_retry_count):
                     time.sleep(CONFIG.read_retry_interval)
                     ret, frame = monitor.cap.read()
                     if ret:
                         break
                 if not ret:
-                    # Try seek-to-start (file) or reopen (any source)
-                    if monitor.cap.isOpened():
-                        monitor.cap.set(cv.CAP_PROP_POS_FRAMES, 0)
-                        ret, frame = monitor.cap.read()
-                    if not ret:
-                        # Reopen capture - works for EOF (file) and connection drops (RTSP/webcam)
-                        time.sleep(1.0)  # Cooldown before reconnect
-                        try:
-                            monitor.cap.release()
-                            reopen_src = local_source
-                            if isinstance(local_source, str) and local_source.startswith("rtsp://"):
-                                reopen_src = local_source + ("&" if "?" in local_source else "?") + "rtsp_transport=tcp"
-                            monitor.cap = cv.VideoCapture(reopen_src, cv.CAP_FFMPEG)
-                            if monitor.cap.isOpened():
-                                ret, frame = monitor.cap.read()
-                                if ret:
-                                    logger.info("Stream reconnected")
-                                    state.add_log("Stream reconnected", "system")
-                        except Exception as e:
-                            logger.warning(f"Reconnect failed: {e}")
-                    if not ret:
-                        logger.info("Stream ended (EOF or Error) source=%s", local_source)
-                        state.add_log("Stream ended (EOF or source error)", "warning", source=str(local_source))
-                        break
+                    # Reopen capture — handles connection drops for live streams
+                    time.sleep(1.0)
+                    try:
+                        monitor.cap.release()
+                        reopen_src = local_source
+                        if isinstance(local_source, str) and local_source.startswith("rtsp://"):
+                            reopen_src = local_source + ("&" if "?" in local_source else "?") + "rtsp_transport=tcp"
+                        monitor.cap = cv.VideoCapture(reopen_src, cv.CAP_FFMPEG)
+                        if monitor.cap.isOpened():
+                            ret, frame = monitor.cap.read()
+                            if ret:
+                                logger.info("Stream reconnected")
+                                state.add_log("Stream reconnected", "system")
+                    except Exception as e:
+                        logger.warning(f"Reconnect failed: {e}")
+                if not ret:
+                    logger.info("Stream ended (EOF or Error) source=%s", local_source)
+                    state.add_log("Stream ended (EOF or source error)", "warning", source=str(local_source))
+                    break
                 
             # Process
             processed_frame, count = monitor.process_frame(frame)
