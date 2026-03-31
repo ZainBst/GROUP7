@@ -117,17 +117,38 @@ export function StudentTable() {
 
     return (
         <div className="flex flex-col gap-4">
-            <div className="overflow-x-auto rounded-lg border border-border">
-                <table className="w-full text-left text-xs text-foreground/80">
+            <div className="rounded-2xl border border-border/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.015))] shadow-[0_18px_40px_rgba(0,0,0,0.12)] overflow-hidden">
+                <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
+                    <div>
+                        <h3 className="text-[11px] font-mono font-bold uppercase tracking-[0.24em] text-foreground/70">
+                            Student Ledger
+                        </h3>
+                        <p className="mt-1 text-xs text-foreground/45">
+                            Fixed alphabetical order with stable columns for easier scanning.
+                        </p>
+                    </div>
+                    <div className="rounded-full border border-border/70 bg-background/60 px-3 py-1 text-[11px] font-mono uppercase tracking-[0.18em] text-foreground/55">
+                        {students.length} active
+                    </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                <table className="w-full table-fixed text-left text-xs text-foreground/80">
+                    <colgroup>
+                        <col className="w-[110px]" />
+                        <col className="w-[180px]" />
+                        <col className="w-[150px]" />
+                        <col />
+                    </colgroup>
                     <thead className="bg-border/30 text-foreground font-bold border-b border-border">
                         <tr>
-                            <th className="px-4 py-3">Student ID</th>
-                            <th className="px-4 py-3">Student Name</th>
-                            <th className="px-4 py-3">Latest Behaviour</th>
-                            <th className="px-4 py-3">Behaviour Breakdown</th>
+                            <th className="px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] text-foreground/65">Student ID</th>
+                            <th className="px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] text-foreground/65">Student Name</th>
+                            <th className="px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] text-foreground/65">Latest Behaviour</th>
+                            <th className="px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] text-foreground/65">Behaviour Breakdown</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="divide-y divide-border/50">
                         {students.length === 0 && (
                             <tr>
                                 <td
@@ -145,25 +166,31 @@ export function StudentTable() {
                             return (
                                 <tr
                                     key={student.name}
-                                    className="border-b border-border hover:bg-border/10 transition-colors align-top"
+                                    className="align-top transition-colors hover:bg-border/10"
                                 >
-                                    <td className="px-4 py-3">{student.id}</td>
-                                    <td className="px-4 py-3">{student.name}</td>
-                                    <td className="px-4 py-3 font-medium text-foreground">
-                                        {student.latestBehavior}
+                                    <td className="px-4 py-3 whitespace-nowrap font-mono text-foreground/65">
+                                        {student.id}
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        <div className="truncate font-medium text-foreground">{student.name}</div>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        <span className="inline-flex max-w-full items-center rounded-full border border-border/70 bg-background/60 px-2.5 py-1 text-[11px] font-mono uppercase tracking-[0.16em] text-foreground/80">
+                                            <span className="truncate">{student.latestBehavior}</span>
+                                        </span>
                                     </td>
                                     <td className="px-4 py-3">
                                         <div className="flex flex-col gap-1">
                                             {sortedBreakdown.map(([behavior, count]) => (
                                                 <div key={behavior} className="flex items-center gap-2">
-                                                    <span className="capitalize text-foreground/90 w-28 shrink-0">{behavior}</span>
-                                                    <div className="flex-1 bg-border/30 rounded-full h-1.5 min-w-[40px]">
+                                                    <span className="w-24 shrink-0 truncate capitalize text-foreground/85">{behavior}</span>
+                                                    <div className="h-1.5 min-w-[40px] flex-1 rounded-full bg-border/30">
                                                         <div
-                                                            className="bg-foreground/60 h-1.5 rounded-full"
+                                                            className="h-1.5 rounded-full bg-foreground/60"
                                                             style={{ width: `${Math.round((count / student.totalEvents) * 100)}%` }}
                                                         />
                                                     </div>
-                                                    <span className="text-foreground/60 w-10 text-right shrink-0">
+                                                    <span className="w-10 shrink-0 text-right font-mono text-foreground/60 tabular-nums">
                                                         {Math.round((count / student.totalEvents) * 100)}%
                                                     </span>
                                                 </div>
@@ -175,6 +202,7 @@ export function StudentTable() {
                         })}
                     </tbody>
                 </table>
+                </div>
             </div>
 
             <div className="flex justify-end gap-2 mt-2">

@@ -118,6 +118,7 @@ type ContextValue = {
 };
 
 const StudentAggregatesContext = createContext<ContextValue | null>(null);
+const nameCollator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
 
 export function StudentAggregatesProvider({ children }: { children: ReactNode }) {
     const [state, dispatch] = useReducer(reducer, {
@@ -140,9 +141,7 @@ export function StudentAggregatesProvider({ children }: { children: ReactNode })
         return () => window.removeEventListener("eventsReset", onReset);
     }, []);
 
-    const students = Object.values(state.agg).sort(
-        (a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime(),
-    );
+    const students = Object.values(state.agg).sort((a, b) => nameCollator.compare(a.name, b.name));
 
     return (
         <StudentAggregatesContext.Provider
