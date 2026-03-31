@@ -24,6 +24,7 @@ class ClassroomMonitorStage2:
         event_callback=None,
         min_recognition_face_size=36,
         min_recognition_face_score=0.70,
+        behavior_max_batch=None,
     ):
         self.cap = cv.VideoCapture(input_source)
         self.detector = detector
@@ -50,6 +51,7 @@ class ClassroomMonitorStage2:
             recheck_interval=recheck_interval,
             behavior_classifier=self.behavior_classifier,
             behavior_interval=self.behavior_interval,
+            max_behavior_batch=behavior_max_batch,
             min_recognition_face_size=min_recognition_face_size,
             min_recognition_face_score=min_recognition_face_score,
         )

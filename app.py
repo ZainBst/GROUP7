@@ -111,6 +111,7 @@ class AppConfig:
         self.session_snapshot_interval = _env_int("SESSION_SNAPSHOT_INTERVAL", 0)
         self.read_retry_count = _env_int("READ_RETRY_COUNT", 10)
         self.read_retry_interval = _env_float("READ_RETRY_INTERVAL", 0.3)
+        self.behavior_max_batch = _env_int("BEHAVIOR_MAX_BATCH", 6)
         self.recognition_threshold = _env_float("RECOGNITION_THRESHOLD", 0.1)
         self.recognition_min_margin = _env_float("RECOGNITION_MIN_MARGIN", 0.01)
         # Disabled by default to preserve pre-automation recognition behavior.
@@ -363,6 +364,7 @@ class FrontendWebcamProcessor:
         event_callback=None,
         min_recognition_face_size=0,
         min_recognition_face_score=0.0,
+        behavior_max_batch=None,
     ):
         self.detector = detector
         self.recognizer = recognizer
@@ -388,6 +390,7 @@ class FrontendWebcamProcessor:
             recheck_interval=recheck_interval,
             behavior_classifier=behavior_classifier,
             behavior_interval=behavior_interval,
+            max_behavior_batch=behavior_max_batch,
             min_recognition_face_size=min_recognition_face_size,
             min_recognition_face_score=min_recognition_face_score,
         )
@@ -773,6 +776,7 @@ def generate_frames():
             event_callback=_on_detection_event,
             min_recognition_face_size=CONFIG.min_recognition_face_size,
             min_recognition_face_score=CONFIG.min_recognition_face_score,
+            behavior_max_batch=CONFIG.behavior_max_batch,
         )
         with state.lock:
             state.active_monitor = monitor
