@@ -217,10 +217,10 @@ const COL_WIDTHS  = [22, 14, 18, 14, 32];
 
 // Engagement level → hex fill color (light tints)
 function engagementFill(score: number): string {
-    if (score >= 80) return "D6F5D6"; // light green  — Excellent
-    if (score >= 60) return "CCE5FF"; // light blue   — Good
-    if (score >= 40) return "FFE0B2"; // light orange — Fair
-    return "FFE4E1";                  // light red    — Needs attention
+    if (score >= 80) return "C8F0C8"; // green  — Excellent (≥ 80%)
+    if (score >= 60) return "CCE5FF"; // blue   — Good (60–79%)
+    if (score >= 40) return "FFE0B2"; // orange — Fair (40–59%)
+    return "FFD0CC";                  // red    — Needs attention (< 40%)
 }
 
 function cell(children: Paragraph[], width: number, fill?: string): TableCell {
@@ -241,12 +241,10 @@ function para(text: string, opts: { bold?: boolean; italics?: boolean; size?: nu
 
 export function buildColourLegend(): Table {
     const LEGEND = [
-        { fill: "C8F0C8", label: "Most engaged student (highest score in class)" },
-        { fill: "D6F5D6", label: "Excellent  (≥ 80%)" },
+        { fill: "C8F0C8", label: "Excellent  (≥ 80%)" },
         { fill: "CCE5FF", label: "Good  (60 – 79%)" },
         { fill: "FFE0B2", label: "Fair  (40 – 59%)" },
-        { fill: "FFE4E1", label: "Needs attention  (< 40%)" },
-        { fill: "FFD0CC", label: "Least engaged student (lowest score in class)" },
+        { fill: "FFD0CC", label: "Needs attention  (< 40%)" },
     ];
 
     const titleRow = new TableRow({
@@ -315,9 +313,6 @@ export function buildStudentSummaryTable(students: FullStudent[]): Table {
         const breakdown = s.behaviorBreakdown ?? s.behavior_breakdown ?? {};
         return { s, score: engagementScore(breakdown) };
     });
-    const maxScore = Math.max(...scored.map((x) => x.score), 0);
-    const minScore = Math.min(...scored.map((x) => x.score), 100);
-
     const dataRows = scored.map(({ s, score }) => {
         const breakdown = s.behaviorBreakdown ?? s.behavior_breakdown ?? {};
         const totalEvents = Object.values(breakdown).reduce((a, b) => a + b, 0);
@@ -334,11 +329,7 @@ export function buildStudentSummaryTable(students: FullStudent[]): Table {
         );
         const profileStr = profileParts.join("  ·  ") || "—";
 
-        const isBest  = scored.length > 1 && score === maxScore;
-        const isWorst = scored.length > 1 && score === minScore && minScore !== maxScore;
-
-        // Entire row gets the same color based on engagement level (best/worst override)
-        const rowFill = isBest ? "C8F0C8" : isWorst ? "FFD0CC" : engagementFill(score);
+        const rowFill = engagementFill(score);
 
         return new TableRow({
             children: [
