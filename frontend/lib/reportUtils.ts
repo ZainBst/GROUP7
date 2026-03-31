@@ -163,8 +163,8 @@ const COL_WIDTHS  = [22, 14, 18, 14, 32];
 // Engagement level → hex fill color (light tints)
 function engagementFill(score: number): string {
     if (score >= 80) return "D6F5D6"; // light green  — Excellent
-    if (score >= 60) return "EAF4EA"; // pale green   — Good
-    if (score >= 40) return "FFF8DC"; // pale yellow  — Fair
+    if (score >= 60) return "CCE5FF"; // light blue   — Good
+    if (score >= 40) return "FFE0B2"; // light orange — Fair
     return "FFE4E1";                  // light red    — Needs attention
 }
 
