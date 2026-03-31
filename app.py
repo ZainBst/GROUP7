@@ -14,6 +14,7 @@ import tempfile
 import threading
 import json
 import asyncio
+from typing import Union
 
 # Suppress FutureWarning from scikit-image used internally by insightface
 warnings.filterwarnings("ignore", category=FutureWarning, module="skimage")
@@ -493,7 +494,7 @@ class FrontendWebcamProcessor:
 state = StreamState()
 
 
-def _build_session_snapshot() -> dict | None:
+def _build_session_snapshot() -> Union[dict, None]:
     """Build a report snapshot from in-memory event buffer. Returns None if no events."""
     with state.lock:
         events = list(state.event_buffer)
