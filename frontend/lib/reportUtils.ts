@@ -144,6 +144,61 @@ export function buildPeriodOverviewParagraphs(
     ];
 }
 
+// ── CSV export ───────────────────────────────────────────────────────────────
+
+type CsvStudent = {
+    id?: string;
+    name: string;
+    firstSeen?: string;
+    first_seen?: string;
+    lastSeen?: string;
+    last_seen?: string;
+    behaviorBreakdown?: Record<string, number>;
+    behavior_breakdown?: Record<string, number>;
+};
+
+export function buildAndDownloadCsv(students: CsvStudent[], sessionStart: string | null): void {
+    const headers = ["Student ID", "Name", "Engagement %", "Engagement Level", "Dominant Behaviour", "Time Present", "Behaviour Profile", "First Seen", "Last Seen"];
+    const rows = students.map((s) => {
+        const breakdown = s.behaviorBreakdown ?? s.behavior_breakdown ?? {};
+        const totalEvents = Object.values(breakdown).reduce((a, b) => a + b, 0);
+        const sorted = Object.entries(breakdown).sort((a, b) => b[1] - a[1]);
+        const dominant = sorted[0]?.[0] ?? "";
+        const score = engagementScore(breakdown);
+        const level = getEngagementLevel(score);
+        const first = s.firstSeen ?? s.first_seen ?? "";
+        const last = s.lastSeen ?? s.last_seen ?? "";
+        const timePresent = first && last ? formatDuration(first, last) : "";
+        const profile = sorted.map(([b, c]) => `${b} ${totalEvents > 0 ? Math.round((c / totalEvents) * 100) : 0}%`).join(" | ");
+        return [
+            s.id ?? "",
+            s.name,
+            `${score}%`,
+            level,
+            dominant,
+            timePresent,
+            profile,
+            first ? new Date(first).toLocaleString() : "",
+            last ? new Date(last).toLocaleString() : "",
+        ];
+    });
+
+    const csvLines = [
+        ...(sessionStart ? [`# Session Start: ${new Date(sessionStart).toLocaleString()}`] : []),
+        `# Generated: ${new Date().toLocaleString()}`,
+        headers.map((h) => `"${h}"`).join(","),
+        ...rows.map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")),
+    ];
+
+    const blob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `behavior_report_${new Date().toISOString().slice(0, 10)}_${Date.now()}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+}
+
 // ── Student Performance Summary table ────────────────────────────────────────
 
 type FullStudent = {

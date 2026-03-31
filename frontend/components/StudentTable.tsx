@@ -1,12 +1,24 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { useStudentAggregates } from "@/contexts/StudentAggregatesContext";
 import { saveReport } from "@/lib/api";
+import { backendUrl } from "@/lib/api";
 import { Document, Packer } from "docx";
-import { buildPeriodOverviewParagraphs, buildStudentSummaryTable } from "@/lib/reportUtils";
+import { buildPeriodOverviewParagraphs, buildStudentSummaryTable, buildAndDownloadCsv } from "@/lib/reportUtils";
+
+type StudentRow = {
+    id: string;
+    name: string;
+    latestBehavior: string;
+    totalEvents: number;
+    behaviorBreakdown: Record<string, number>;
+    firstSeen: string;
+    lastSeen: string;
+};
 
 async function buildAndDownloadDoc(
-    students: { id: string; name: string; latestBehavior: string; totalEvents: number; behaviorBreakdown: Record<string, number>; firstSeen: string; lastSeen: string }[],
+    students: StudentRow[],
     sessionStart: string | null,
 ): Promise<string> {
     const now = new Date();
@@ -18,24 +30,11 @@ async function buildAndDownloadDoc(
         }
     }
 
-    const summaryParagraphs = buildPeriodOverviewParagraphs(
-        globalBreakdown,
-        students,
-        sessionStart,
-        now,
-    );
-
+    const summaryParagraphs = buildPeriodOverviewParagraphs(globalBreakdown, students, sessionStart, now);
     const studentTable = buildStudentSummaryTable(students);
 
     const doc = new Document({
-        sections: [
-            {
-                children: [
-                    ...summaryParagraphs,
-                    studentTable,
-                ],
-            },
-        ],
+        sections: [{ children: [...summaryParagraphs, studentTable] }],
     });
 
     const blob = await Packer.toBlob(doc);
@@ -49,29 +48,60 @@ async function buildAndDownloadDoc(
     return filename;
 }
 
+async function saveReportToHistory(students: StudentRow[], sessionStart: string | null, filename: string) {
+    const totalEvents = students.reduce((s, st) => s + st.totalEvents, 0);
+    await saveReport({
+        filename,
+        total_students: students.length,
+        total_events: totalEvents,
+        session_start: sessionStart,
+        students: students.map((s) => ({
+            id: s.id,
+            name: s.name,
+            total_events: s.totalEvents,
+            latest_behavior: s.latestBehavior,
+            behavior_breakdown: s.behaviorBreakdown,
+            first_seen: s.firstSeen,
+            last_seen: s.lastSeen,
+        })),
+    });
+    window.dispatchEvent(new CustomEvent("reportSaved"));
+}
+
 export function StudentTable() {
     const { students, sessionStart } = useStudentAggregates();
 
+    // Keep a ref so the SSE listener always reads the latest students/sessionStart
+    const latestRef = useRef({ students, sessionStart });
+    useEffect(() => {
+        latestRef.current = { students, sessionStart };
+    }, [students, sessionStart]);
+
+    // Auto-save report when backend signals stream ended
+    useEffect(() => {
+        const es = new EventSource(backendUrl("/events/stream"));
+        const onEnded = async () => {
+            const { students: s, sessionStart: ss } = latestRef.current;
+            if (s.length === 0) return;
+            try {
+                const now = new Date();
+                const filename = `behavior_report_${now.toISOString().slice(0, 10)}_${now.getTime()}.docx`;
+                await saveReportToHistory(s, ss, filename);
+            } catch {
+                // silent — auto-save is best-effort
+            }
+        };
+        es.addEventListener("stream_ended", onEnded);
+        return () => es.close();
+    }, []);
+
     const handleDownloadDoc = async () => {
         const filename = await buildAndDownloadDoc(students, sessionStart);
+        await saveReportToHistory(students, sessionStart, filename);
+    };
 
-        const totalEvents = students.reduce((s, st) => s + st.totalEvents, 0);
-        await saveReport({
-            filename,
-            total_students: students.length,
-            total_events: totalEvents,
-            session_start: sessionStart,
-            students: students.map((s) => ({
-                id: s.id,
-                name: s.name,
-                total_events: s.totalEvents,
-                latest_behavior: s.latestBehavior,
-                behavior_breakdown: s.behaviorBreakdown,
-                first_seen: s.firstSeen,
-                last_seen: s.lastSeen,
-            })),
-        });
-        window.dispatchEvent(new CustomEvent("reportSaved"));
+    const handleDownloadCsv = () => {
+        buildAndDownloadCsv(students, sessionStart);
     };
 
     return (
@@ -136,7 +166,14 @@ export function StudentTable() {
                 </table>
             </div>
 
-            <div className="flex justify-end mt-2">
+            <div className="flex justify-end gap-2 mt-2">
+                <button
+                    onClick={handleDownloadCsv}
+                    disabled={students.length === 0}
+                    className="px-4 py-2 bg-transparent border border-border hover:bg-border/30 text-foreground rounded-md transition-colors text-xs font-bold font-mono disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                    Export CSV
+                </button>
                 <button
                     onClick={handleDownloadDoc}
                     disabled={students.length === 0}

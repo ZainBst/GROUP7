@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { getReports } from "@/lib/api";
 import { Document, Packer } from "docx";
-import { buildPeriodOverviewParagraphs, buildStudentSummaryTable } from "@/lib/reportUtils";
+import { buildPeriodOverviewParagraphs, buildStudentSummaryTable, buildAndDownloadCsv } from "@/lib/reportUtils";
 
 // -- Types ------------------------------------------------------------------
 type StoredStudent = {
@@ -113,12 +113,29 @@ export function ReportHistory() {
                                 {report.total_events !== 1 ? "s" : ""}
                             </span>
                         </div>
-                        <button
-                            onClick={() => _redownloadReport(report)}
-                            className="px-3 py-1 bg-transparent border border-border hover:bg-border/30 text-foreground rounded-md transition-colors"
-                        >
-                            Re-download
-                        </button>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => buildAndDownloadCsv(
+                                    (report.students ?? []).map((s) => ({
+                                        id: s.id,
+                                        name: s.name,
+                                        first_seen: s.first_seen,
+                                        last_seen: s.last_seen,
+                                        behavior_breakdown: s.behavior_breakdown,
+                                    })),
+                                    report.session_start,
+                                )}
+                                className="px-3 py-1 bg-transparent border border-border hover:bg-border/30 text-foreground rounded-md transition-colors"
+                            >
+                                CSV
+                            </button>
+                            <button
+                                onClick={() => _redownloadReport(report)}
+                                className="px-3 py-1 bg-transparent border border-border hover:bg-border/30 text-foreground rounded-md transition-colors"
+                            >
+                                Re-download
+                            </button>
+                        </div>
                     </div>
                 ))}
             </div>

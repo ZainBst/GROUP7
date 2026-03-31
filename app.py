@@ -106,6 +106,8 @@ class AppConfig:
         self.processing_width = _env_int("PROCESSING_WIDTH", 960)
         self.require_single_worker = _env_bool("REQUIRE_SINGLE_WORKER", True)
         self.max_stream_seconds = _env_int("MAX_STREAM_SECONDS", 0)
+        # 0 = disabled. Set to e.g. 300 to snapshot every 5 minutes.
+        self.session_snapshot_interval = _env_int("SESSION_SNAPSHOT_INTERVAL", 0)
         self.read_retry_count = _env_int("READ_RETRY_COUNT", 10)
         self.read_retry_interval = _env_float("READ_RETRY_INTERVAL", 0.3)
         self.recognition_threshold = _env_float("RECOGNITION_THRESHOLD", 0.1)
@@ -175,6 +177,7 @@ class StreamState:
         self.log_sequence = 0
         self.event_buffer = deque(maxlen=1000)
         self.event_sequence = 0
+        self.stream_ended_flag = False  # set True briefly when stream stops, for SSE auto-save
         
         # Models
         self.detector = None
@@ -489,6 +492,53 @@ class FrontendWebcamProcessor:
 state = StreamState()
 
 
+def _build_session_snapshot() -> dict | None:
+    """Build a report snapshot from in-memory event buffer. Returns None if no events."""
+    with state.lock:
+        events = list(state.event_buffer)
+    if not events:
+        return None
+
+    # Aggregate per student
+    students_agg: dict[str, dict] = {}
+    for ev in events:
+        name = ev.get("name", "Unknown")
+        behavior = (ev.get("behavior") or "").lower()
+        ts = ev.get("created_at", "")
+        if name not in students_agg:
+            students_agg[name] = {
+                "id": name,
+                "name": name,
+                "total_events": 0,
+                "latest_behavior": behavior,
+                "behavior_breakdown": {},
+                "first_seen": ts,
+                "last_seen": ts,
+            }
+        s = students_agg[name]
+        s["total_events"] += 1
+        s["latest_behavior"] = behavior
+        s["behavior_breakdown"][behavior] = s["behavior_breakdown"].get(behavior, 0) + 1
+        if ts and ts > s["last_seen"]:
+            s["last_seen"] = ts
+        if ts and ts < s["first_seen"]:
+            s["first_seen"] = ts
+
+    students = list(students_agg.values())
+    total_events = sum(s["total_events"] for s in students)
+    session_start = events[0].get("created_at") if events else None
+    now_iso = datetime.now(timezone.utc).isoformat()
+    filename = f"behavior_report_{now_iso[:10]}_{int(time.time())}.docx"
+
+    return {
+        "filename": filename,
+        "total_students": len(students),
+        "total_events": total_events,
+        "session_start": session_start,
+        "students": students,
+    }
+
+
 def _on_detection_event(event):
     state.add_event(
         name=event.get("name", "Unknown"),
@@ -730,7 +780,8 @@ def generate_frames():
         logger.info(f"Starting generator for source: {local_source}")
         state.add_log("Video stream started", "system", source_type=active_source_type)
         started_at = time.time()
-        
+        last_snapshot_at = time.time()
+
         while True:
             with state.lock:
                 stop_requested = state.stop_requested
@@ -789,9 +840,19 @@ def generate_frames():
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
             
-            # Rate limit slightly to prevent CPU spinning if processing is too fast (unlikely with deep learning)
-            # time.sleep(0.01) 
-            
+            # Periodic session snapshot (if SESSION_SNAPSHOT_INTERVAL > 0)
+            if CONFIG.session_snapshot_interval > 0:
+                now_t = time.time()
+                if (now_t - last_snapshot_at) >= CONFIG.session_snapshot_interval:
+                    snapshot = _build_session_snapshot()
+                    if snapshot:
+                        try:
+                            save_report(snapshot)
+                            logger.info("Session snapshot saved")
+                        except Exception as snap_err:
+                            logger.warning(f"Session snapshot failed: {snap_err}")
+                    last_snapshot_at = now_t
+
     except Exception as e:
         logger.error(f"Stream error: {e}")
         state.add_log("Streaming runtime error", "error", error=str(e))
@@ -803,6 +864,7 @@ def generate_frames():
             state.source = None
             state.active_source_type = None
             state.active_upload_path = None
+            state.stream_ended_flag = True
         if 'monitor' in locals():
             if monitor.cap:
                 monitor.cap.release()
@@ -816,6 +878,14 @@ def generate_frames():
                 os.remove(active_upload_path)
             except Exception as e:
                 logger.warning(f"Failed to cleanup upload file {active_upload_path}: {e}")
+        # Auto-save final report snapshot on stream end
+        try:
+            snapshot = _build_session_snapshot()
+            if snapshot:
+                save_report(snapshot)
+                logger.info("Auto-saved report on stream end")
+        except Exception as snap_err:
+            logger.warning(f"Auto-save report failed: {snap_err}")
         state.add_log("Video stream stopped", "system")
 
 @app.get("/video_feed")
@@ -935,6 +1005,12 @@ async def stream_events():
                     last_id = entry["id"]
                     payload = json.dumps(entry)
                     yield f"id: {entry['id']}\nevent: event\ndata: {payload}\n\n"
+                with state.lock:
+                    ended = state.stream_ended_flag
+                    if ended:
+                        state.stream_ended_flag = False
+                if ended:
+                    yield "event: stream_ended\ndata: {}\n\n"
                 if (time.monotonic() - heartbeat_at) >= 10:
                     heartbeat_at = time.monotonic()
                     yield "event: heartbeat\ndata: {}\n\n"
