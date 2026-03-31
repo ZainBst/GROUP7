@@ -237,6 +237,62 @@ function para(text: string, opts: { bold?: boolean; italics?: boolean; size?: nu
     });
 }
 
+// ── Colour legend table ───────────────────────────────────────────────────────
+
+export function buildColourLegend(): Table {
+    const LEGEND = [
+        { fill: "C8F0C8", label: "Most engaged student (highest score in class)" },
+        { fill: "D6F5D6", label: "Excellent  (≥ 80%)" },
+        { fill: "CCE5FF", label: "Good  (60 – 79%)" },
+        { fill: "FFE0B2", label: "Fair  (40 – 59%)" },
+        { fill: "FFE4E1", label: "Needs attention  (< 40%)" },
+        { fill: "FFD0CC", label: "Least engaged student (lowest score in class)" },
+    ];
+
+    const titleRow = new TableRow({
+        children: [
+            new TableCell({
+                columnSpan: 2,
+                shading: { fill: "2E4057", type: ShadingType.CLEAR, color: "auto" },
+                children: [
+                    new Paragraph({
+                        alignment: AlignmentType.CENTER,
+                        children: [new TextRun({ text: "Row Highlight Legend", bold: true, size: 20, color: "FFFFFF" })],
+                    }),
+                ],
+            }),
+        ],
+    });
+
+    const rows = LEGEND.map(({ fill, label }) =>
+        new TableRow({
+            children: [
+                new TableCell({
+                    width: { size: 8, type: WidthType.PERCENTAGE },
+                    shading: { fill, type: ShadingType.CLEAR, color: "auto" },
+                    children: [new Paragraph({ text: "" })],
+                }),
+                new TableCell({
+                    width: { size: 92, type: WidthType.PERCENTAGE },
+                    shading: { fill, type: ShadingType.CLEAR, color: "auto" },
+                    children: [
+                        new Paragraph({
+                            children: [new TextRun({ text: label, size: 18 })],
+                        }),
+                    ],
+                }),
+            ],
+        }),
+    );
+
+    return new Table({
+        width: { size: 60, type: WidthType.PERCENTAGE },
+        rows: [titleRow, ...rows],
+    });
+}
+
+// ── Student Performance Summary table ─────────────────────────────────────────
+
 export function buildStudentSummaryTable(students: FullStudent[]): Table {
     const headerRow = new TableRow({
         tableHeader: true,

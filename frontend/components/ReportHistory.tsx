@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { getReports } from "@/lib/api";
-import { Document, Packer } from "docx";
-import { buildPeriodOverviewParagraphs, buildStudentSummaryTable, buildAndDownloadCsv } from "@/lib/reportUtils";
+import { Document, Packer, Paragraph, HeadingLevel } from "docx";
+import { buildPeriodOverviewParagraphs, buildStudentSummaryTable, buildColourLegend, buildAndDownloadCsv } from "@/lib/reportUtils";
 import { TrendChart } from "@/components/TrendChart";
 
 // -- Types ------------------------------------------------------------------
@@ -46,6 +46,7 @@ async function _redownloadReport(report: ReportRecord) {
         generatedAt,
     );
 
+    const legendTable = buildColourLegend();
     const studentTable = buildStudentSummaryTable(students);
 
     const doc = new Document({
@@ -53,6 +54,9 @@ async function _redownloadReport(report: ReportRecord) {
             {
                 children: [
                     ...summaryParagraphs,
+                    new Paragraph({ text: "Student Performance Summary", heading: HeadingLevel.HEADING_2, spacing: { before: 200, after: 120 } }),
+                    legendTable,
+                    new Paragraph({ text: "", spacing: { after: 160 } }),
                     studentTable,
                 ],
             },

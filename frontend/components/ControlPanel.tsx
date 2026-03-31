@@ -1,7 +1,7 @@
 "use client";
 
 import { Camera, Loader2, Monitor, RotateCcw, StopCircle, Upload } from "lucide-react";
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { backendUrl } from "@/lib/api";
 
 export function ControlPanel() {
@@ -217,6 +217,29 @@ export function ControlPanel() {
             setIsLoading(false);
         }
     };
+
+    // When an uploaded video reaches EOF, the backend stops itself and fires
+    // stream_ended via SSE → StudentTable dispatches "streamAutoEnded" here.
+    // We mirror the same cleanup a manual Stop would do (no /stop_stream call needed).
+    useEffect(() => {
+        const onAutoEnded = () => {
+            if (frontendLoopRef.current) {
+                clearInterval(frontendLoopRef.current);
+                frontendLoopRef.current = null;
+            }
+            frontendUploadBusyRef.current = false;
+            if (frontendStreamRef.current) {
+                frontendStreamRef.current.getTracks().forEach((t) => t.stop());
+                frontendStreamRef.current = null;
+                window.dispatchEvent(new Event("frontendLiveStopped"));
+            }
+            setMode(null);
+            setStatus("idle");
+            window.dispatchEvent(new Event("streamStopped"));
+        };
+        window.addEventListener("streamAutoEnded", onAutoEnded);
+        return () => window.removeEventListener("streamAutoEnded", onAutoEnded);
+    }, []);
 
     const resetData = async () => {
         const shouldReset = window.confirm(

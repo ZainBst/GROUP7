@@ -4,8 +4,8 @@ import { useEffect, useRef } from "react";
 import { useStudentAggregates } from "@/contexts/StudentAggregatesContext";
 import { saveReport } from "@/lib/api";
 import { backendUrl } from "@/lib/api";
-import { Document, Packer } from "docx";
-import { buildPeriodOverviewParagraphs, buildStudentSummaryTable, buildAndDownloadCsv } from "@/lib/reportUtils";
+import { Document, Packer, Paragraph, HeadingLevel } from "docx";
+import { buildPeriodOverviewParagraphs, buildStudentSummaryTable, buildColourLegend, buildAndDownloadCsv } from "@/lib/reportUtils";
 
 type StudentRow = {
     id: string;
@@ -31,10 +31,19 @@ async function buildAndDownloadDoc(
     }
 
     const summaryParagraphs = buildPeriodOverviewParagraphs(globalBreakdown, students, sessionStart, now);
+    const legendTable = buildColourLegend();
     const studentTable = buildStudentSummaryTable(students);
 
     const doc = new Document({
-        sections: [{ children: [...summaryParagraphs, studentTable] }],
+        sections: [{
+            children: [
+                ...summaryParagraphs,
+                new Paragraph({ text: "Student Performance Summary", heading: HeadingLevel.HEADING_2, spacing: { before: 200, after: 120 } }),
+                legendTable,
+                new Paragraph({ text: "", spacing: { after: 160 } }),
+                studentTable,
+            ],
+        }],
     });
 
     const blob = await Packer.toBlob(doc);
@@ -82,6 +91,8 @@ export function StudentTable() {
         const es = new EventSource(backendUrl("/events/stream"));
         const onEnded = async () => {
             const { students: s, sessionStart: ss } = latestRef.current;
+            // Tell ControlPanel the stream ended by itself so it can return to idle
+            window.dispatchEvent(new Event("streamAutoEnded"));
             if (s.length === 0) return;
             try {
                 const now = new Date();
