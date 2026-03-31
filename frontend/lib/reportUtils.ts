@@ -7,6 +7,7 @@ import {
     TableCell,
     WidthType,
     AlignmentType,
+    ShadingType,
 } from "docx";
 
 const POSITIVE_BEHAVIORS = new Set(["upright", "write", "hand"]);
@@ -159,10 +160,19 @@ type FullStudent = {
 const COL_HEADERS = ["Name", "Engagement", "Dominant Behaviour", "Time Present", "Behaviour Profile"];
 const COL_WIDTHS  = [22, 14, 18, 14, 32];
 
-function cell(children: Paragraph[], width: number): TableCell {
+// Engagement level → hex fill color (light tints)
+function engagementFill(score: number): string {
+    if (score >= 80) return "D6F5D6"; // light green  — Excellent
+    if (score >= 60) return "EAF4EA"; // pale green   — Good
+    if (score >= 40) return "FFF8DC"; // pale yellow  — Fair
+    return "FFE4E1";                  // light red    — Needs attention
+}
+
+function cell(children: Paragraph[], width: number, fill?: string): TableCell {
     return new TableCell({
         width: { size: width, type: WidthType.PERCENTAGE },
         children,
+        ...(fill ? { shading: { fill, type: ShadingType.CLEAR, color: "auto" } } : {}),
     });
 }
 
@@ -178,41 +188,55 @@ export function buildStudentSummaryTable(students: FullStudent[]): Table {
         children: COL_HEADERS.map((label, i) =>
             new TableCell({
                 width: { size: COL_WIDTHS[i], type: WidthType.PERCENTAGE },
+                shading: { fill: "2E4057", type: ShadingType.CLEAR, color: "auto" },
                 children: [
                     new Paragraph({
                         alignment: AlignmentType.CENTER,
-                        children: [new TextRun({ text: label, bold: true, size: 20 })],
+                        children: [new TextRun({ text: label, bold: true, size: 20, color: "FFFFFF" })],
                     }),
                 ],
             }),
         ),
     });
 
-    const dataRows = students.map((s) => {
+    // Compute scores to find best/worst
+    const scored = students.map((s) => {
+        const breakdown = s.behaviorBreakdown ?? s.behavior_breakdown ?? {};
+        return { s, score: engagementScore(breakdown) };
+    });
+    const maxScore = Math.max(...scored.map((x) => x.score), 0);
+    const minScore = Math.min(...scored.map((x) => x.score), 100);
+
+    const dataRows = scored.map(({ s, score }) => {
         const breakdown = s.behaviorBreakdown ?? s.behavior_breakdown ?? {};
         const totalEvents = Object.values(breakdown).reduce((a, b) => a + b, 0);
         const sorted = Object.entries(breakdown).sort((a, b) => b[1] - a[1]);
         const dominant = sorted[0]?.[0] ?? "—";
-        const score = engagementScore(breakdown);
         const level = getEngagementLevel(score);
 
         const first = s.firstSeen ?? s.first_seen ?? "";
         const last = s.lastSeen ?? s.last_seen ?? "";
         const timePresent = first && last ? formatDuration(first, last) : "—";
 
-        // "upright 60% · write 20% · down 20%"
         const profileParts = sorted.map(
             ([b, c]) => `${b} ${totalEvents > 0 ? Math.round((c / totalEvents) * 100) : 0}%`,
         );
         const profileStr = profileParts.join("  ·  ") || "—";
 
+        const isBest  = scored.length > 1 && score === maxScore;
+        const isWorst = scored.length > 1 && score === minScore && minScore !== maxScore;
+
+        // Row highlight: best = green, worst = red, others = engagement tint on engagement cell only
+        const rowFill  = isBest ? "C8F0C8" : isWorst ? "FFD0CC" : undefined;
+        const engFill  = rowFill ?? engagementFill(score);
+
         return new TableRow({
             children: [
-                cell([para(s.name, { bold: true })], COL_WIDTHS[0]),
-                cell([para(`${score}%  (${level})`)], COL_WIDTHS[1]),
-                cell([para(dominant)], COL_WIDTHS[2]),
-                cell([para(timePresent)], COL_WIDTHS[3]),
-                cell([para(profileStr, { size: 16 })], COL_WIDTHS[4]),
+                cell([para(s.name, { bold: true })],           COL_WIDTHS[0], rowFill),
+                cell([para(`${score}%  (${level})`)],          COL_WIDTHS[1], engFill),
+                cell([para(dominant)],                          COL_WIDTHS[2], rowFill),
+                cell([para(timePresent)],                       COL_WIDTHS[3], rowFill),
+                cell([para(profileStr, { size: 16 })],         COL_WIDTHS[4], rowFill),
             ],
         });
     });
