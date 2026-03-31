@@ -35,6 +35,26 @@ class TrackManager:
         # Metadata storage: {track_id: {'name': 'Unknown', 'conf': 0.0, 'last_check_time': 0.0, ...}}
         self.track_metadata = {}
 
+    def _initial_behavior_check_time(self, current_time: float, track_id: int) -> float:
+        """
+        Spread newly created tracks across the behavior interval so they do not all
+        become due on the same frame and create inference spikes.
+        """
+        if self.behavior_interval <= 0:
+            return current_time
+        spread_slots = max(4, int(self.max_behavior_batch or 0), 1)
+        slot = track_id % spread_slots
+        return current_time + (slot / spread_slots) * self.behavior_interval
+
+    def _behavior_retry_delay(self) -> float:
+        """
+        When a track is skipped by the batch cap, postpone it enough to avoid
+        hammering behavior inference every frame while still retrying soon.
+        """
+        if self.behavior_interval <= 0:
+            return 0.05
+        return max(0.10, min(0.35, self.behavior_interval * 0.30))
+
     def get_metadata(self):
         return self.track_metadata
 
@@ -129,7 +149,7 @@ class TrackManager:
                     'name': 'Unknown', 'conf': 0.0, 'last_check_time': 0.0,
                     'behavior': 'negative', 'behavior_conf': 0.0,
                     'behavior_last_check': 0.0,
-                    'next_behavior_check': current_time,
+                    'next_behavior_check': self._initial_behavior_check_time(current_time, track_id),
                     'id_history': deque(maxlen=self.id_history_size),
                     'last_name_change_time': 0.0
                 }
@@ -204,8 +224,8 @@ class TrackManager:
                 for _, _, track_id, _ in skipped:
                     meta = self.track_metadata.get(track_id)
                     if meta:
-                        # Short postpone to ensure skipped tracks are picked up next frame.
-                        meta['next_behavior_check'] = current_time + 0.05
+                        # Avoid retrying the same overflowed tracks every frame.
+                        meta['next_behavior_check'] = current_time + self._behavior_retry_delay()
             else:
                 selected = due_behavior
 

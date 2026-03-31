@@ -109,15 +109,15 @@ class AppConfig:
         self.cleanup_uploads = _env_bool("CLEANUP_UPLOADS", True)
         self.detect_interval = _env_int("DETECT_INTERVAL", 1)
         self.recheck_interval = _env_float("RECHECK_INTERVAL", 1.5)
-        self.behavior_interval = _env_float("BEHAVIOR_INTERVAL", 1.0)
-        self.processing_width = _env_int("PROCESSING_WIDTH", 960)
+        self.behavior_interval = _env_float("BEHAVIOR_INTERVAL", 1.5)
+        self.processing_width = _env_int("PROCESSING_WIDTH", 768)
         self.require_single_worker = _env_bool("REQUIRE_SINGLE_WORKER", True)
         self.max_stream_seconds = _env_int("MAX_STREAM_SECONDS", 0)
         # 0 = disabled. Set to e.g. 300 to snapshot every 5 minutes.
         self.session_snapshot_interval = _env_int("SESSION_SNAPSHOT_INTERVAL", 0)
         self.read_retry_count = _env_int("READ_RETRY_COUNT", 10)
         self.read_retry_interval = _env_float("READ_RETRY_INTERVAL", 0.3)
-        self.behavior_max_batch = _env_int("BEHAVIOR_MAX_BATCH", 6)
+        self.behavior_max_batch = _env_int("BEHAVIOR_MAX_BATCH", 4)
         self.recognition_threshold = _env_float("RECOGNITION_THRESHOLD", 0.1)
         self.recognition_min_margin = _env_float("RECOGNITION_MIN_MARGIN", 0.01)
         # Disabled by default to preserve pre-automation recognition behavior.

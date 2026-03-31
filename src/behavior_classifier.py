@@ -25,6 +25,7 @@ class BehaviorClassifier:
 
         self.model = YOLO(model_path)
         self.model.to(device)
+        self.imgsz = 224
         if grayscale is None:
             env_flag = os.getenv("BEHAVIOR_GRAYSCALE", "").strip().lower()
             if env_flag in {"1", "true", "yes", "on"}:
@@ -84,7 +85,7 @@ class BehaviorClassifier:
             return "negative", 0.0
 
         crop = self._preprocess_crop(crop)
-        results = self.model.predict(crop, verbose=False)
+        results = self.model.predict(crop, verbose=False, imgsz=self.imgsz)
 
         if not results or len(results[0].probs.data) == 0:
             return "negative", 0.0
@@ -102,7 +103,7 @@ class BehaviorClassifier:
         # YOLO11 batch inference
         if self.grayscale:
             crops = [self._preprocess_crop(crop) for crop in crops]
-        results = self.model.predict(crops, verbose=False)
+        results = self.model.predict(crops, verbose=False, imgsz=self.imgsz)
 
         batch_output = []
 
