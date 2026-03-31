@@ -23,4 +23,25 @@ body {
   font-family: var(--font-mono);
   background-image: radial-gradient(rgba(74, 74, 74, 0.15) 1px, transparent 1px);
   background-size: 20px 20px;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* ── Dark mode overrides ──────────────────────────────────────────────────── */
+html[data-theme="dark"] {
+  --color-ink-bg: #14141f;
+  --color-ink-text: #ddddd0;
+  --color-ink-accent: #7b9bb5;
+  --color-ink-border: #2e2e42;
+  --color-ink-dark: #e8e8e0;
+  --color-ink-gray: #6b6b85;
+  --color-ink-ivory: #14141f;
+
+  --color-background: var(--color-ink-bg);
+  --color-foreground: var(--color-ink-text);
+  --color-accent: var(--color-ink-accent);
+  --color-border: var(--color-ink-border);
+}
+
+html[data-theme="dark"] body {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px);
 }

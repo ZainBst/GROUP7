@@ -1,4 +1,7 @@
-import { Beaker } from "lucide-react";
+"use client";
+
+import { Beaker, Sun, Moon } from "lucide-react";
+import { useTheme } from "@/contexts/ThemeContext";
 
 interface HeaderProps {
     currentView: "landing" | "dashboard" | "how-it-works";
@@ -6,6 +9,8 @@ interface HeaderProps {
 }
 
 export function Header({ currentView, setView }: HeaderProps) {
+    const { theme, toggleTheme } = useTheme();
+
     return (
         <header className="w-full flex items-center justify-between px-12 py-8 border-b border-border/40 bg-background/80 backdrop-blur-sm sticky top-0 z-50">
             {/* Brand logo */}
@@ -36,6 +41,15 @@ export function Header({ currentView, setView }: HeaderProps) {
 
             {/* Actions */}
             <div className="flex items-center gap-4">
+                {/* Theme toggle */}
+                <button
+                    onClick={toggleTheme}
+                    aria-label="Toggle theme"
+                    className="p-2 rounded-md border border-border/50 text-foreground/70 hover:text-foreground hover:bg-border/30 transition-all duration-200"
+                >
+                    {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+                </button>
+
                 <button
                     onClick={() => setView("dashboard")}
                     className={`flex items-center gap-2 border border-border px-5 py-2 rounded-md transition-all duration-200 font-medium tracking-wide ${currentView === "dashboard"

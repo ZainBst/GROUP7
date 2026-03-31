@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { Providers } from "@/components/Providers";
 
 export const metadata: Metadata = {
   title: "BehaviorNet - Behavior Monitor",
@@ -14,9 +15,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased font-mono min-h-screen text-sm text-ink-text bg-ink-bg">
-        <main className="flex flex-col min-h-screen relative z-10">
-          {children}
-        </main>
+        <Providers>
+          <main className="flex flex-col min-h-screen relative z-10">
+            {children}
+          </main>
+        </Providers>
       </body>
     </html>
   );
