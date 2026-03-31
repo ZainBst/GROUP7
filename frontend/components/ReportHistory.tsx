@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { getReports } from "@/lib/api";
 import { Document, Packer } from "docx";
 import { buildPeriodOverviewParagraphs, buildStudentSummaryTable, buildAndDownloadCsv } from "@/lib/reportUtils";
+import { TrendChart } from "@/components/TrendChart";
 
 // -- Types ------------------------------------------------------------------
 type StoredStudent = {
@@ -93,6 +94,7 @@ export function ReportHistory() {
 
     return (
         <div className="flex flex-col gap-3 mt-2">
+            <TrendChart />
             <h3 className="text-xs font-bold font-mono text-foreground/70 uppercase tracking-widest border-t border-border/50 pt-4">
                 Report History
             </h3>

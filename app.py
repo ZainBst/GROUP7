@@ -40,6 +40,7 @@ from src.mongo_client import (
     log_event,
     save_report,
     get_reports,
+    get_student_trends,
     add_training_sample,
     get_pending_review,
     submit_review,
@@ -1171,3 +1172,11 @@ async def list_reports(limit: int = 20):
     Return the most recent saved reports (newest first).
     """
     return {"reports": get_reports(limit)}
+
+
+@app.get("/reports/trends")
+async def reports_trends(limit: int = 20):
+    """
+    Return per-student engagement trends across the most recent sessions.
+    """
+    return get_student_trends(limit)

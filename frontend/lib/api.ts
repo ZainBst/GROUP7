@@ -33,6 +33,22 @@ export async function getReports(): Promise<unknown[]> {
   }
 }
 
+export type TrendPoint = { session_id: string; engagement: number; level: string } | null;
+export type TrendsData = {
+  sessions: { session_id: string; generated_at: string }[];
+  students: Record<string, TrendPoint[]>;
+};
+
+export async function getTrends(limit = 20): Promise<TrendsData | null> {
+  try {
+    const res = await fetch(backendUrl(`/reports/trends?limit=${limit}`));
+    if (!res.ok) return null;
+    return (await res.json()) as TrendsData;
+  } catch {
+    return null;
+  }
+}
+
 // ── Self-learning feedback ─────────────────────────────────────────────────
 export function cropImageUrl(cropPath: string): string {
   if (!cropPath || !selfLearningEnabled) return "";

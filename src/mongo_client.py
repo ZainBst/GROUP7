@@ -157,6 +157,65 @@ def get_reports(limit: int = 20) -> list:
         return []
 
 
+def get_student_trends(limit: int = 20) -> dict:
+    """
+    Return per-student engagement trend across the most recent sessions.
+    Output: {
+        sessions: [ { session_id, generated_at } ],
+        students: {
+            name: [ { session_id, engagement, level } | null, ... ]  # null if absent
+        }
+    }
+    """
+    POSITIVE = {"upright", "write", "hand"}
+    NEGATIVE = {"down", "phone", "turn"}
+
+    def eng_score(breakdown: dict) -> int:
+        pos = sum(v for k, v in breakdown.items() if k.lower().strip() in POSITIVE)
+        neg = sum(v for k, v in breakdown.items() if k.lower().strip() in NEGATIVE)
+        total = pos + neg
+        return round((pos / total) * 100) if total > 0 else 0
+
+    def eng_level(score: int) -> str:
+        if score >= 80: return "Excellent"
+        if score >= 60: return "Good"
+        if score >= 40: return "Fair"
+        return "Needs attention"
+
+    reports = get_reports(limit=limit)
+    # oldest first for chronological chart
+    reports = list(reversed(reports))
+
+    sessions = []
+    students: dict[str, list] = {}
+
+    for report in reports:
+        sid = report["_id"]
+        gen_at = report.get("generated_at", "")
+        sessions.append({"session_id": sid, "generated_at": gen_at})
+
+        seen_in_session: set[str] = set()
+        for s in (report.get("students") or []):
+            name = s.get("name") or "Unknown"
+            bd = s.get("behavior_breakdown") or {}
+            score = eng_score(bd)
+            if name not in students:
+                students[name] = [None] * (len(sessions) - 1)
+            students[name].append({
+                "session_id": sid,
+                "engagement": score,
+                "level": eng_level(score),
+            })
+            seen_in_session.add(name)
+
+        # pad students absent from this session with None
+        for name, data in students.items():
+            if name not in seen_in_session:
+                data.append(None)
+
+    return {"sessions": sessions, "students": students}
+
+
 # ── training samples (for corrections + uncertain) ─────────────────────────
 def add_training_sample(
     crop_path: str,
