@@ -226,14 +226,13 @@ export function buildStudentSummaryTable(students: FullStudent[]): Table {
         const isBest  = scored.length > 1 && score === maxScore;
         const isWorst = scored.length > 1 && score === minScore && minScore !== maxScore;
 
-        // Row highlight: best = green, worst = red, others = engagement tint on engagement cell only
-        const rowFill  = isBest ? "C8F0C8" : isWorst ? "FFD0CC" : undefined;
-        const engFill  = rowFill ?? engagementFill(score);
+        // Entire row gets the same color based on engagement level (best/worst override)
+        const rowFill = isBest ? "C8F0C8" : isWorst ? "FFD0CC" : engagementFill(score);
 
         return new TableRow({
             children: [
                 cell([para(s.name, { bold: true })],           COL_WIDTHS[0], rowFill),
-                cell([para(`${score}%  (${level})`)],          COL_WIDTHS[1], engFill),
+                cell([para(`${score}%  (${level})`)],          COL_WIDTHS[1], rowFill),
                 cell([para(dominant)],                          COL_WIDTHS[2], rowFill),
                 cell([para(timePresent)],                       COL_WIDTHS[3], rowFill),
                 cell([para(profileStr, { size: 16 })],         COL_WIDTHS[4], rowFill),
