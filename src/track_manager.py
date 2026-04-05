@@ -147,6 +147,7 @@ class TrackManager:
             if track_id not in self.track_metadata:
                 self.track_metadata[track_id] = {
                     'name': 'Unknown', 'conf': 0.0, 'last_check_time': 0.0,
+                    # Keep the last known behavior until the next scheduled behavior pass.
                     'behavior': 'negative', 'behavior_conf': 0.0,
                     'behavior_last_check': 0.0,
                     'next_behavior_check': self._initial_behavior_check_time(current_time, track_id),
