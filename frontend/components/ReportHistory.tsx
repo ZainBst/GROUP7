@@ -94,57 +94,65 @@ export function ReportHistory() {
         return () => window.removeEventListener("reportSaved", onSaved);
     }, []);
 
-    if (loading || reports.length === 0) return null;
+    if (loading) return null;
 
     return (
         <div className="flex flex-col gap-3 mt-2">
             <TrendChart />
-            <h3 className="text-xs font-bold font-mono text-foreground/70 uppercase tracking-widest border-t border-border/50 pt-4">
-                Report History
-            </h3>
-            <div className="flex flex-col gap-2">
-                {reports.map((report) => (
-                    <div
-                        key={report._id}
-                        className="flex items-center justify-between px-4 py-3 rounded-lg border border-border bg-border/10 text-xs font-mono"
-                    >
-                        <div className="flex flex-col gap-0.5">
-                            <span className="text-foreground font-medium">
-                                {new Date(report.generated_at).toLocaleString()}
-                            </span>
-                            <span className="text-foreground/60">
-                                {report.total_students} student
-                                {report.total_students !== 1 ? "s" : ""}{" · "}
-                                {report.total_events} event
-                                {report.total_events !== 1 ? "s" : ""}
-                            </span>
-                        </div>
-                        <div className="flex gap-2">
-                            <button
-                                onClick={() => buildAndDownloadCsv(
-                                    (report.students ?? []).map((s) => ({
-                                        id: s.id,
-                                        name: s.name,
-                                        first_seen: s.first_seen,
-                                        last_seen: s.last_seen,
-                                        behavior_breakdown: s.behavior_breakdown,
-                                    })),
-                                    report.session_start,
-                                )}
-                                className="px-3 py-1 bg-transparent border border-border hover:bg-border/30 text-foreground rounded-md transition-colors"
+            {reports.length > 0 ? (
+                <>
+                    <h3 className="text-xs font-bold font-mono text-foreground/70 uppercase tracking-widest border-t border-border/50 pt-4">
+                        Report History
+                    </h3>
+                    <div className="flex flex-col gap-2">
+                        {reports.map((report) => (
+                            <div
+                                key={report._id}
+                                className="flex items-center justify-between px-4 py-3 rounded-lg border border-border bg-border/10 text-xs font-mono"
                             >
-                                CSV
-                            </button>
-                            <button
-                                onClick={() => _redownloadReport(report)}
-                                className="px-3 py-1 bg-transparent border border-border hover:bg-border/30 text-foreground rounded-md transition-colors"
-                            >
-                                Re-download
-                            </button>
-                        </div>
+                                <div className="flex flex-col gap-0.5">
+                                    <span className="text-foreground font-medium">
+                                        {new Date(report.generated_at).toLocaleString()}
+                                    </span>
+                                    <span className="text-foreground/60">
+                                        {report.total_students} student
+                                        {report.total_students !== 1 ? "s" : ""}{" · "}
+                                        {report.total_events} event
+                                        {report.total_events !== 1 ? "s" : ""}
+                                    </span>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => buildAndDownloadCsv(
+                                            (report.students ?? []).map((s) => ({
+                                                id: s.id,
+                                                name: s.name,
+                                                first_seen: s.first_seen,
+                                                last_seen: s.last_seen,
+                                                behavior_breakdown: s.behavior_breakdown,
+                                            })),
+                                            report.session_start,
+                                        )}
+                                        className="px-3 py-1 bg-transparent border border-border hover:bg-border/30 text-foreground rounded-md transition-colors"
+                                    >
+                                        CSV
+                                    </button>
+                                    <button
+                                        onClick={() => _redownloadReport(report)}
+                                        className="px-3 py-1 bg-transparent border border-border hover:bg-border/30 text-foreground rounded-md transition-colors"
+                                    >
+                                        Re-download
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
                     </div>
-                ))}
-            </div>
+                </>
+            ) : (
+                <p className="text-xs font-mono text-foreground/40 border-t border-border/50 pt-4">
+                    Report history will appear here after the first saved report.
+                </p>
+            )}
         </div>
     );
 }

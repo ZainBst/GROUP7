@@ -109,7 +109,7 @@ class AppConfig:
         self.cleanup_uploads = _env_bool("CLEANUP_UPLOADS", True)
         self.detect_interval = _env_int("DETECT_INTERVAL", 1)
         self.recheck_interval = _env_float("RECHECK_INTERVAL", 1.5)
-        self.behavior_interval = _env_float("BEHAVIOR_INTERVAL", 1.5)
+        self.behavior_interval = _env_float("BEHAVIOR_INTERVAL", 3.0)
         self.processing_width = _env_int("PROCESSING_WIDTH", 768)
         self.require_single_worker = _env_bool("REQUIRE_SINGLE_WORKER", True)
         self.max_stream_seconds = _env_int("MAX_STREAM_SECONDS", 0)

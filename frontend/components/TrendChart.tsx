@@ -2,9 +2,32 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { getTrends, type TrendsData, type TrendPoint } from "@/lib/api";
+import { useStudentAggregates } from "@/contexts/StudentAggregatesContext";
+import { useRealtimeEvents } from "@/hooks/useRealtimeEvents";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts";
 
 const nameCollator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+const POSITIVE_BEHAVIORS = new Set(["upright", "write", "hand"]);
+const NEGATIVE_BEHAVIORS = new Set(["down", "phone", "turn"]);
+
+function getEngagementLevel(score: number) {
+    if (score >= 80) return "Excellent";
+    if (score >= 60) return "Good";
+    if (score >= 40) return "Fair";
+    return "Needs attention";
+}
+
+function engagementScore(breakdown: Record<string, number>) {
+    let pos = 0;
+    let neg = 0;
+    for (const [behavior, count] of Object.entries(breakdown)) {
+        const key = behavior.toLowerCase().trim().replace(/_/g, " ");
+        if (POSITIVE_BEHAVIORS.has(key)) pos += count;
+        else if (NEGATIVE_BEHAVIORS.has(key)) neg += count;
+    }
+    const total = pos + neg;
+    return total > 0 ? Math.round((pos / total) * 100) : 0;
+}
 
 function engagementColor(score: number | null | undefined) {
     if (score == null) return "#e5e7eb";
@@ -25,7 +48,6 @@ function clampEngagement(score: number | null | undefined) {
     return Math.max(0, Math.min(100, score));
 }
 
-// ── label formatter ──────────────────────────────────────────────────────────
 function sessionLabel(iso: string, idx: number) {
     try {
         const d = new Date(iso);
@@ -33,6 +55,18 @@ function sessionLabel(iso: string, idx: number) {
     } catch {
         return `S${idx + 1}`;
     }
+}
+
+function elapsedLabel(startMs: number, currentMs: number) {
+    const totalSeconds = Math.max(0, Math.round((currentMs - startMs) / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    if (minutes >= 60) {
+        const hours = Math.floor(minutes / 60);
+        const remMinutes = minutes % 60;
+        return `${hours}h ${String(remMinutes).padStart(2, "0")}m`;
+    }
+    return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
 // ── custom tooltip ───────────────────────────────────────────────────────────
@@ -71,10 +105,13 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
 
 // ── main component ───────────────────────────────────────────────────────────
 export function TrendChart() {
+    const { students: liveStudents, sessionStart } = useStudentAggregates();
+    const liveEvents = useRealtimeEvents();
     const [data, setData] = useState<TrendsData | null>(null);
     const [loading, setLoading] = useState(true);
     const [selectedStudent, setSelectedStudent] = useState<string>("");
     const [search, setSearch] = useState("");
+    const [allowSavedFallback, setAllowSavedFallback] = useState(true);
 
     useEffect(() => {
         getTrends(20).then((d) => {
@@ -92,13 +129,113 @@ export function TrendChart() {
         return () => window.removeEventListener("reportSaved", onSaved);
     }, []);
 
-    const students = useMemo(
+    useEffect(() => {
+        const handleReset = () => {
+            setAllowSavedFallback(false);
+            setSelectedStudent("");
+            setSearch("");
+        };
+        const handleStreamStarted = () => {
+            setAllowSavedFallback(false);
+        };
+        const handleStreamStopped = () => {
+            setAllowSavedFallback(true);
+        };
+
+        window.addEventListener("eventsReset", handleReset);
+        window.addEventListener("streamStarted", handleStreamStarted);
+        window.addEventListener("streamStopped", handleStreamStopped);
+        return () => {
+            window.removeEventListener("eventsReset", handleReset);
+            window.removeEventListener("streamStarted", handleStreamStarted);
+            window.removeEventListener("streamStopped", handleStreamStopped);
+        };
+    }, []);
+
+    const hasLiveSession = liveEvents.length > 0 || sessionStart !== null || liveStudents.length > 0;
+
+    const savedStudents = useMemo(
         () => Object.keys(data?.students ?? {}).sort((a, b) => nameCollator.compare(a, b)),
         [data],
     );
 
-    // Build recharts-friendly row per session
+    const liveTrend = useMemo(() => {
+        if (!hasLiveSession || !liveEvents.length || !sessionStart) return null;
+        const sortedEvents = [...liveEvents].sort(
+            (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+        );
+        const startMs = new Date(sessionStart).getTime();
+        const endMs = new Date(sortedEvents[sortedEvents.length - 1].created_at).getTime();
+        const spanMs = Math.max(endMs - startMs, 1000);
+        const bucketCount = Math.max(4, Math.min(8, Math.ceil(sortedEvents.length / 4)));
+        const bucketEnds = Array.from({ length: bucketCount }, (_, idx) =>
+            startMs + Math.round((spanMs * idx) / Math.max(bucketCount - 1, 1)),
+        );
+
+        const names = [...new Set(sortedEvents.map((event) => event.name))].sort((a, b) => nameCollator.compare(a, b));
+        const chartRows: Record<string, unknown>[] = [];
+        let cursor = 0;
+        const studentBreakdowns = new Map<string, Record<string, number>>();
+        const globalBreakdown: Record<string, number> = {};
+
+        for (const bucketEnd of bucketEnds) {
+            while (
+                cursor < sortedEvents.length &&
+                new Date(sortedEvents[cursor].created_at).getTime() <= bucketEnd
+            ) {
+                const event = sortedEvents[cursor];
+                const behaviorKey = (event.behavior || "unknown").toLowerCase().trim().replace(/_/g, " ");
+                const currentBreakdown = studentBreakdowns.get(event.name) ?? {};
+                currentBreakdown[behaviorKey] = (currentBreakdown[behaviorKey] ?? 0) + 1;
+                studentBreakdowns.set(event.name, currentBreakdown);
+                globalBreakdown[behaviorKey] = (globalBreakdown[behaviorKey] ?? 0) + 1;
+                cursor += 1;
+            }
+
+            const row: Record<string, unknown> = {
+                _label: elapsedLabel(startMs, bucketEnd),
+            };
+            let total = 0;
+            let count = 0;
+            for (const name of names) {
+                const breakdown = studentBreakdowns.get(name);
+                const score = breakdown ? engagementScore(breakdown) : null;
+                row[name] = score;
+                row[`__raw_${name}`] = score == null ? null : {
+                    session_id: "live-session",
+                    engagement: score,
+                    level: getEngagementLevel(score),
+                };
+                if (score != null) {
+                    total += score;
+                    count += 1;
+                }
+            }
+            row.__average = count > 0 ? Math.round(total / count) : null;
+            chartRows.push(row);
+        }
+
+        return {
+            chartRows,
+            students: names,
+            latestScores: Object.fromEntries(
+                names.map((name) => {
+                    const breakdown = studentBreakdowns.get(name);
+                    const score = breakdown ? engagementScore(breakdown) : null;
+                    return [name, score];
+                }),
+            ),
+        };
+    }, [hasLiveSession, liveEvents, sessionStart]);
+
+    const students = useMemo(
+        () => (liveTrend ? liveTrend.students : savedStudents),
+        [liveTrend, savedStudents],
+    );
+
     const chartData = useMemo(() => {
+        if (liveTrend) return liveTrend.chartRows;
+        if (!allowSavedFallback) return [];
         if (!data) return [];
         return data.sessions.map((sess, i) => {
             const row: Record<string, unknown> = {
@@ -119,9 +256,22 @@ export function TrendChart() {
             row.__average = count > 0 ? clampEngagement(Math.round(sum / count)) : null;
             return row;
         });
-    }, [data]);
+    }, [allowSavedFallback, data, liveTrend]);
 
     const latestSummary = useMemo(() => {
+        if (liveTrend) {
+            const latest = students
+                .map((name) => ({ name, score: liveTrend.latestScores[name] ?? null }))
+                .filter((item) => item.score != null);
+            if (latest.length === 0) return null;
+            const avg = latest.reduce((sum, item) => sum + (item.score ?? 0), 0) / latest.length;
+            const best = [...latest].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))[0];
+            return {
+                average: Math.round(avg),
+                bestName: best.name,
+                bestScore: Math.round(best.score ?? 0),
+            };
+        }
         if (!data || data.sessions.length === 0) return null;
         const lastIndex = data.sessions.length - 1;
         const latest = students
@@ -135,7 +285,7 @@ export function TrendChart() {
             bestName: best.name,
             bestScore: Math.round(best.point?.engagement ?? 0),
         };
-    }, [data, students]);
+    }, [data, liveTrend, students]);
 
     const effectiveSelectedStudent = useMemo(() => {
         if (!students.length) return "";
@@ -148,20 +298,29 @@ export function TrendChart() {
         return students.filter((name) => name.toLowerCase().includes(query));
     }, [search, students]);
 
-    if (loading) return null;
-    if (!data || data.sessions.length < 2) {
+    if (loading && !liveTrend && !data) return null;
+    if (!liveTrend && (!data || data.sessions.length === 0)) {
         return (
             <p className="text-xs font-mono text-foreground/40 mt-2 border-t border-border/50 pt-4">
-                Trend comparison needs at least 2 saved sessions.
+                Start a session to populate the engagement trend view.
+            </p>
+        );
+    }
+    if (chartData.length === 0) {
+        return (
+            <p className="text-xs font-mono text-foreground/40 mt-2 border-t border-border/50 pt-4">
+                Engagement trend cleared. Start a new session to build it again.
             </p>
         );
     }
 
-    const selectedLatest = latestSummary && effectiveSelectedStudent
-        ? data?.students[effectiveSelectedStudent]?.[data.sessions.length - 1] ?? null
+    const selectedScore = effectiveSelectedStudent
+        ? (liveTrend
+            ? liveTrend.latestScores[effectiveSelectedStudent] ?? null
+            : data?.students[effectiveSelectedStudent]?.[data.sessions.length - 1]?.engagement ?? null)
         : null;
-    const selectedColor = engagementColor(selectedLatest?.engagement ?? null);
-    const selectedLabel = engagementLabel(selectedLatest?.engagement ?? null);
+    const selectedColor = engagementColor(selectedScore);
+    const selectedLabel = engagementLabel(selectedScore);
 
     return (
         <div className="mt-2 rounded-lg border border-border bg-background p-4">
@@ -172,7 +331,13 @@ export function TrendChart() {
                             Engagement Trend
                         </h3>
                         <p className="mt-1 max-w-xl text-xs text-foreground/50">
-                            Showing class average with one focused student at a time to keep the trend readable.
+                            {liveTrend
+                                ? "Tracking the current session over elapsed time. This resets automatically every new run."
+                                : !hasLiveSession && data && data.sessions.length > 0
+                                ? (data.sessions.length < 2
+                                    ? "Showing the latest saved snapshot. Additional sessions will turn this into a true trend."
+                                    : "Showing class average with one focused student at a time to keep the trend readable.")
+                                : "Showing the current live session. Saved reports will build the longer-term trend over time."}
                         </p>
                     </div>
                     {latestSummary && (
@@ -186,7 +351,7 @@ export function TrendChart() {
                                 <div className="mt-1 text-sm font-semibold text-foreground truncate">{effectiveSelectedStudent || latestSummary.bestName}</div>
                                 <div className="mt-1 flex items-center gap-2">
                                     <span className="text-xs font-mono text-foreground/55 tabular-nums">
-                                        {selectedLatest?.engagement != null ? `${Math.round(selectedLatest.engagement)}%` : `${latestSummary.bestScore}%`}
+                                        {selectedScore != null ? `${Math.round(selectedScore)}%` : `${latestSummary.bestScore}%`}
                                     </span>
                                     <span
                                         className="rounded-full px-2 py-0.5 text-[10px] font-mono uppercase tracking-[0.14em]"
@@ -219,7 +384,9 @@ export function TrendChart() {
                         <div className="max-h-[260px] overflow-y-auto pr-1">
                             <div className="flex flex-col gap-1.5">
                                 {filteredStudents.map((name) => {
-                                    const score = data.students[name]?.[data.sessions.length - 1]?.engagement ?? null;
+                                    const score = liveTrend
+                                        ? liveTrend.latestScores[name] ?? null
+                                        : data?.students[name]?.[data.sessions.length - 1]?.engagement ?? null;
                                     const baseColor = engagementColor(score);
                                     const color = name === effectiveSelectedStudent ? baseColor : `${baseColor}99`;
                                     const active = name === effectiveSelectedStudent;
@@ -254,12 +421,14 @@ export function TrendChart() {
                                 <CartesianGrid strokeDasharray="3 6" stroke="rgba(255,255,255,0.07)" vertical={false} />
                                 <XAxis
                                     dataKey="_label"
+                                    interval="preserveStartEnd"
                                     tick={{ fontSize: 10, fontFamily: "monospace", fill: "rgba(255,255,255,0.45)" }}
                                     axisLine={false}
                                     tickLine={false}
                                 />
                                 <YAxis
                                     domain={[0, 100]}
+                                    ticks={[0, 25, 50, 75, 100]}
                                     tickFormatter={(v: number) => `${v}%`}
                                     tick={{ fontSize: 10, fontFamily: "monospace", fill: "rgba(255,255,255,0.45)" }}
                                     axisLine={false}
@@ -300,8 +469,8 @@ export function TrendChart() {
                 </div>
 
                 <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-[0.18em] text-foreground/35">
-                    <span>Showing last {data.sessions.length} saved sessions</span>
-                    <span>One focused student plus class average</span>
+                    <span>{liveTrend ? "X axis: elapsed session time" : `Showing last ${data?.sessions.length ?? 0} saved sessions`}</span>
+                    <span>{liveTrend ? "Y axis: engagement score (0-100%)" : ((data?.sessions.length ?? 0) < 2 ? "One snapshot so far" : "One focused student plus class average")}</span>
                 </div>
             </div>
         </div>
