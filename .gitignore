@@ -12,12 +12,10 @@ venv/
 *.mp4
 *.avi
 behavior_log*.csv
-faces/
 behavior_dataset.folder/
 uploads/
 runs/
-
-# Models
+*.pkl
 *.onnx
 *.pt
 
